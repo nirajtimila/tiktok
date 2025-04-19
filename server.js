@@ -110,4 +110,4 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("🚀 Server running at http://localhost:3000"));
+app.listen(3000, () => console.log("🚀 Server running at https://tiktokviewlike-bc7665f0d217.herokuapp.com/:3000"));
