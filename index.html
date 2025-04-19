@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TikTok Views</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 100px;
+    }
+
+    input {
+      padding: 10px;
+      width: 300px;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+
+    .progress-container {
+      width: 300px;
+      height: 30px;
+      background: #eee;
+      border-radius: 5px;
+      margin: 20px auto;
+      overflow: hidden;
+      display: none;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #4caf50;
+      transition: width 0.2s ease-in-out;
+    }
+
+    #message {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+
+    #logs {
+      margin-top: 20px;
+      text-align: left;
+      font-size: 14px;
+      background-color: #f4f4f4;
+      padding: 10px;
+      max-height: 200px;
+      overflow-y: scroll;
+      width: 90%;
+      margin: 0 auto;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Get Free TikTok Views</h1>
+  <input type="text" id="link" placeholder="Paste TikTok link here" />
+  <br />
+  <button onclick="submitLink()">Submit</button>
+
+  <div class="progress-container" id="progressContainer">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+
+  <div id="message"></div>
+
+  <div id="logs"></div>
+
+  <script>
+    function submitLink() {
+      const link = document.getElementById('link').value;
+      if (!link) {
+        document.getElementById('message').innerText = "Please enter a TikTok link.";
+        return;
+      }
+
+      document.getElementById('message').innerText = '';
+      document.getElementById('progressContainer').style.display = 'block';
+      let progress = 0;
+      const progressBar = document.getElementById('progressBar');
+      
+      // Animate progress bar to simulate activity
+      const interval = setInterval(() => {
+        if (progress < 100) {
+          progress += 2;
+          progressBar.style.width = progress + "%";
+        }
+      }, 300);
+
+      fetch('http://localhost:3000/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link })
+      })
+      .then(res => res.json())
+      .then(data => {
+        clearInterval(interval);
+        progressBar.style.width = "100%";
+        setTimeout(() => {
+          document.getElementById('message').innerText = data.message;
+          document.getElementById('progressContainer').style.display = 'none';
+          progressBar.style.width = "0%";
+        }, 500);
+      })
+      .catch(err => {
+        clearInterval(interval);
+        document.getElementById('message').innerText = "❌ Something went wrong.";
+        document.getElementById('progressContainer').style.display = 'none';
+        progressBar.style.width = "0%";
+      });
+    }
+
+    // Function to listen to logs from the server and update the logs section
+    const eventSource = new EventSource('http://localhost:3000/progress');
+    eventSource.onmessage = function(event) {
+      const log = event.data;
+      const logsDiv = document.getElementById('logs');
+      logsDiv.innerHTML += `<p>${log}</p>`;
+      logsDiv.scrollTop = logsDiv.scrollHeight; // Scroll to the bottom of logs
+    };
+  </script>
+</body>
+</html>
