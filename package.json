@@ -1,0 +1,27 @@
+{
+  "name": "github",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nirajtimila/tiktok.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nirajtimila/tiktok/issues"
+  },
+  "homepage": "https://github.com/nirajtimila/tiktok#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "path": "^0.12.7",
+    "puppeteer": "^24.6.1"
+  }
+}
