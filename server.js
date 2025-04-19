@@ -24,6 +24,11 @@ app.get('/progress', (req, res) => {
   };
 
   logs.forEach(sendLog);
+
+  // Clean up clientRes when the client disconnects
+  req.on('close', () => {
+    clientRes = null; // Clean up when client disconnects
+  });
 });
 
 function pushLog(message) {
@@ -40,7 +45,7 @@ app.post('/submit', async (req, res) => {
 
   try {
     logs = []; // Reset logs
-    pushLog("🚀 Let it begain...");
+    pushLog("🚀 Let it begin...");
 
     browser = await puppeteer.launch({
       headless: true, // Run in headless mode (hidden)
@@ -51,7 +56,7 @@ app.post('/submit', async (req, res) => {
     await page.setViewport({ width: 1280, height: 800 });
 
     pushLog("🌐 Navigating to site...");
-    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' }); // Wait for full page load
 
     pushLog("📝 Typing TikTok link...");
     await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
@@ -65,9 +70,9 @@ app.post('/submit', async (req, res) => {
 
     // Manually trigger progress updates to frontend
     for (let progress = 0; progress <= 100; progress += 2) {
-      pushLog(`Progress: ${progress}%`); // Log to terminal
+      pushLog(`Progress: ${progress}%`);
       if (clientRes) {
-        clientRes.write(`data: Progress: ${progress}%\n\n`); // Emit to client
+        clientRes.write(`data: Progress: ${progress}%\n\n`);
       }
       await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
     }
@@ -77,7 +82,7 @@ app.post('/submit', async (req, res) => {
       return el && (el.innerText.includes("100") || el.style.width === "100%");
     }, { timeout: 60000 });
 
-    pushLog("✅ Progress complete. finalizing...");
+    pushLog("✅ Progress complete. Finalizing...");
     await new Promise(resolve => setTimeout(resolve, 30000));
 
     pushLog("🔍 Checking result...");
@@ -110,4 +115,6 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("🚀 Server running at https://tiktokviewlike-bc7665f0d217.herokuapp.com/:3000"));
+// Use Heroku's assigned port or fallback to 3000 for local testing
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`🚀 Server running at http://localhost:${port}`));
