@@ -73,6 +73,8 @@
   <div id="logs"></div>
 
   <script>
+    const backendUrl = 'https://tiktok-dtg4.onrender.com';
+
     function submitLink() {
       const link = document.getElementById('link').value;
       if (!link) {
@@ -84,8 +86,7 @@
       document.getElementById('progressContainer').style.display = 'block';
       let progress = 0;
       const progressBar = document.getElementById('progressBar');
-      
-      // Animate progress bar to simulate activity
+
       const interval = setInterval(() => {
         if (progress < 100) {
           progress += 2;
@@ -93,7 +94,7 @@
         }
       }, 300);
 
-      fetch('http://localhost:3000/submit', {
+      fetch(`${backendUrl}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ link })
@@ -116,13 +117,13 @@
       });
     }
 
-    // Function to listen to logs from the server and update the logs section
-    const eventSource = new EventSource('http://localhost:3000/progress');
+    // Live logs via Server-Sent Events
+    const eventSource = new EventSource(`${backendUrl}/progress`);
     eventSource.onmessage = function(event) {
       const log = event.data;
       const logsDiv = document.getElementById('logs');
       logsDiv.innerHTML += `<p>${log}</p>`;
-      logsDiv.scrollTop = logsDiv.scrollHeight; // Scroll to the bottom of logs
+      logsDiv.scrollTop = logsDiv.scrollHeight;
     };
   </script>
 </body>
