@@ -1,61 +1,68 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
-const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
-// To keep track of logs for streaming progress
-let clientRes = null;
-let logs = [];
+// Per-session logs and clients
+const sessions = new Map(); // key: sessionId, value: { res, logs[] }
 
-// Progress endpoint to stream logs to the client
+// Stream logs to frontend per session
 app.get('/progress', (req, res) => {
+  const sessionId = req.query.sessionId;
+  if (!sessionId) return res.status(400).end();
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  clientRes = res;
-
-  const sendLog = (log) => {
-    res.write(`data: ${log}\n\n`);
-  };
-
-  logs.forEach(sendLog);
+  if (!sessions.has(sessionId)) {
+    sessions.set(sessionId, { res, logs: [] });
+  } else {
+    const session = sessions.get(sessionId);
+    session.res = res;
+    session.logs.forEach(log => res.write(`data: ${log}\n\n`));
+  }
 
   req.on('close', () => {
-    clientRes = null;
+    const session = sessions.get(sessionId);
+    if (session && session.res === res) {
+      sessions.delete(sessionId); // clean up
+    }
   });
 });
 
-// Helper function to log messages
-function pushLog(message) {
-  console.log(message);
-  logs.push(message);
-  if (clientRes) clientRes.write(`data: ${message}\n\n`);
+// Helper to send logs to the right client
+function pushLog(sessionId, message) {
+  console.log(`[${sessionId}] ${message}`);
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  session.logs.push(message);
+  if (session.res) session.res.write(`data: ${message}\n\n`);
 }
 
-// Submit endpoint to start the TikTok view process
+// TikTok automation handler
 app.post('/submit', async (req, res) => {
-  const { link } = req.body;
-  if (!link) return res.status(400).json({ message: "TikTok link is required" });
+  const { link, sessionId } = req.body;
+  if (!link || !sessionId) {
+    return res.status(400).json({ message: "TikTok link and sessionId are required" });
+  }
 
   let browser;
 
   try {
-    logs = [];
-    pushLog("🚀 Let it begin...");
+    // Clear previous logs for this session
+    sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
 
-    // Use Puppeteer's bundled Chromium, or adjust if you're in a specific environment
+    pushLog(sessionId, "🚀 Let it begin...");
+
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-    pushLog(`Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
+    pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
     browser = await puppeteer.launch({
       headless: true,
@@ -73,33 +80,35 @@ app.post('/submit', async (req, res) => {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    pushLog("🌐 Navigating to site...");
+    pushLog(sessionId, "🌐 Navigating to site...");
     await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
 
-    pushLog("📝 Typing TikTok link...");
+    pushLog(sessionId, "📝 Typing TikTok link...");
     await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
     await page.type('input[name="free_link"]', link);
 
-    pushLog("🚀 Submitting...");
+    pushLog(sessionId, "🚀 Submitting...");
     await page.click('button[type="submit"]');
 
-    pushLog("⏳ Waiting for progress...");
+    pushLog(sessionId, "⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
+    // Simulate frontend progress
     for (let progress = 0; progress <= 100; progress += 2) {
-      pushLog(`Progress: ${progress}%`);
+      pushLog(sessionId, `Progress: ${progress}%`);
       await new Promise(resolve => setTimeout(resolve, 300));
     }
 
+    // Wait for actual progress bar to reach 100% or disappear
     await page.waitForFunction(() => {
       const el = document.querySelector('.progress-bar');
       return el && (el.innerText.includes("100") || el.style.width === "100%");
     }, { timeout: 60000 });
 
-    pushLog("✅ Progress complete. Finalizing...");
-    await new Promise(resolve => setTimeout(resolve, 30000));
+    pushLog(sessionId, "✅ Progress complete. Finalizing...");
+    await new Promise(resolve => setTimeout(resolve, 30000)); // give time for popup
 
-    pushLog("🔍 Checking result...");
+    pushLog(sessionId, "🔍 Checking result...");
     const popupStatus = await page.evaluate(() => {
       const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
       if (!popup) return 'No Popup';
@@ -112,23 +121,24 @@ app.post('/submit', async (req, res) => {
     await browser.close();
 
     if (popupStatus === 'Success') {
-      pushLog("🎉 Success: Views added!");
+      pushLog(sessionId, "🎉 Success: Views added!");
       return res.json({ message: "✅ Success: Views successfully added!" });
     } else if (popupStatus === 'Error') {
-      pushLog("❌ Error: Submission failed.");
+      pushLog(sessionId, "❌ Error: Submission failed.");
       return res.json({ message: "⚠️ Error: Try again later." });
     } else {
-      pushLog("❔ Unknown popup status.");
+      pushLog(sessionId, "❔ Unknown popup status.");
       return res.json({ message: "⚠️ Error: Try again later." });
     }
 
   } catch (err) {
     if (browser) await browser.close();
-    pushLog(`❌ Error: ${err.message}`);
+    pushLog(sessionId, `❌ Error: ${err.message}`);
     return res.status(500).json({ message: "❌ Automation error: " + err.message });
   }
 });
 
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
