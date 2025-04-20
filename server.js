@@ -6,7 +6,7 @@ const path = require('path');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'))); // Serve HTML from 'public' folder
 
 let clientRes = null;
 let logs = [];
@@ -25,15 +25,16 @@ app.get('/progress', (req, res) => {
 
   logs.forEach(sendLog);
 
+  // Clean up clientRes when the client disconnects
   req.on('close', () => {
-    clientRes = null;
+    clientRes = null; // Clean up when client disconnects
   });
 });
 
 function pushLog(message) {
-  console.log(message);
+  console.log(message); // Log to the terminal
   logs.push(message);
-  if (clientRes) clientRes.write(`data: ${message}\n\n`);
+  if (clientRes) clientRes.write(`data: ${message}\n\n`); // Send log to client
 }
 
 app.post('/submit', async (req, res) => {
@@ -43,22 +44,23 @@ app.post('/submit', async (req, res) => {
   let browser;
 
   try {
-    logs = [];
+    logs = []; // Reset logs
     pushLog("🚀 Let it begin...");
 
-    const executablePath = process.env.CHROMIUM_PATH || puppeteer.executablePath();
+    // Ensure Puppeteer uses the correct executable path for Chrome
+    const browserExecutablePath = process.env.CHROME_BIN || '/app/.apt/usr/bin/google-chrome-stable';
 
     browser = await puppeteer.launch({
-      headless: true,
+      headless: true, // Run in headless mode (hidden)
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: executablePath
+      executablePath: browserExecutablePath // Use the correct executable path for Chrome
     });
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
     pushLog("🌐 Navigating to site...");
-    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
+    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' }); // Wait for full page load
 
     pushLog("📝 Typing TikTok link...");
     await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
@@ -70,12 +72,13 @@ app.post('/submit', async (req, res) => {
     pushLog("⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
+    // Manually trigger progress updates to frontend
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(`Progress: ${progress}%`);
       if (clientRes) {
         clientRes.write(`data: Progress: ${progress}%\n\n`);
       }
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
     }
 
     await page.waitForFunction(() => {
@@ -116,5 +119,6 @@ app.post('/submit', async (req, res) => {
   }
 });
 
+// Use Heroku's assigned port or fallback to 3000 for local testing
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 Server running at http://localhost:${port}`));
