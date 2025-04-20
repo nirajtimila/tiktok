@@ -7,10 +7,12 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middlewares
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public'))); // Serve HTML from 'public' folder
+app.use(express.static(path.join(__dirname, 'public')));
 
+// To keep track of logs for streaming progress
 let clientRes = null;
 let logs = [];
 
@@ -41,50 +43,6 @@ function pushLog(message) {
   if (clientRes) clientRes.write(`data: ${message}\n\n`);
 }
 
-// Root endpoint to start a Puppeteer task
-app.get('/', async (req, res) => {
-  let browser = null;
-
-  try {
-    // Log that the process is starting
-    pushLog("🚀 Starting Puppeteer...");
-
-    // Launch headless Chromium using chrome-aws-lambda
-    const executablePath = await chromium.executablePath;
-    
-    browser = await chromium.puppeteer.launch({
-      args: chromium.args,
-      executablePath: executablePath || '/usr/bin/google-chrome',
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true,
-    });
-
-    const page = await browser.newPage();
-
-    // Navigate to a test page
-    pushLog("🌐 Navigating to example.com...");
-    await page.goto('https://example.com', { waitUntil: 'networkidle2' });
-
-    // Get the page title
-    const title = await page.title();
-    
-    // Log and send the page title to the client
-    pushLog(`Page Title: ${title}`);
-    res.send(`
-      <h1>Puppeteer on Heroku is working!</h1>
-      <p>Page Title: ${title}</p>
-    `);
-  } catch (err) {
-    console.error('❌ Automation error:', err);
-    pushLog(`❌ Error: ${err.message}`);
-    res.status(500).send(`❌ Automation error: ${err.message}`);
-  } finally {
-    if (browser !== null) {
-      await browser.close();
-    }
-  }
-});
-
 // Submit endpoint to start the TikTok view process
 app.post('/submit', async (req, res) => {
   const { link } = req.body;
@@ -96,7 +54,8 @@ app.post('/submit', async (req, res) => {
     logs = [];
     pushLog("🚀 Let it begin...");
 
-    const chromeExecutablePath = await chromium.executablePath;
+    // Launch headless Chromium using chrome-aws-lambda
+    const chromeExecutablePath = await chromium.executablePath || '/usr/bin/google-chrome-stable';
 
     if (!chromeExecutablePath) throw new Error("Chrome executable not found.");
 
@@ -107,7 +66,7 @@ app.post('/submit', async (req, res) => {
       args: chromium.args,
       executablePath: chromeExecutablePath,
       headless: chromium.headless,
-      defaultViewport: chromium.defaultViewport,
+      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
