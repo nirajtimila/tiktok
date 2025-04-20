@@ -54,7 +54,7 @@ app.post('/submit', async (req, res) => {
     logs = [];
     pushLog("🚀 Let it begin...");
 
-    // Launch headless Chromium using chrome-aws-lambda
+    // Use the path for Chromium provided by chrome-aws-lambda
     const chromeExecutablePath = await chromium.executablePath || '/usr/bin/google-chrome-stable';
 
     if (!chromeExecutablePath) throw new Error("Chrome executable not found.");
