@@ -1,6 +1,5 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
-const chromium = require('chrome-aws-lambda');
+const puppeteer = require('puppeteer');
 const cors = require('cors');
 const path = require('path');
 
@@ -54,19 +53,22 @@ app.post('/submit', async (req, res) => {
     logs = [];
     pushLog("🚀 Let it begin...");
 
-    // Use the path for Chromium provided by chrome-aws-lambda
-    const chromeExecutablePath = await chromium.executablePath || '/usr/bin/google-chrome-stable';
+    const executablePath = '/usr/bin/google-chrome'; // Use Chromium in Docker
 
-    if (!chromeExecutablePath) throw new Error("Chrome executable not found.");
+    pushLog(`Using Chrome path: ${executablePath}`);
 
-    pushLog(`Using Chrome path: ${chromeExecutablePath}`);
-
-    // Launch the browser with Puppeteer
     browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: chromeExecutablePath,
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true,
+      headless: true,
+      executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process',
+      ]
     });
 
     const page = await browser.newPage();
@@ -85,13 +87,11 @@ app.post('/submit', async (req, res) => {
     pushLog("⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
-    // Simulate the progress bar updates
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(`Progress: ${progress}%`);
       await new Promise(resolve => setTimeout(resolve, 300));
     }
 
-    // Wait until the progress bar reaches 100%
     await page.waitForFunction(() => {
       const el = document.querySelector('.progress-bar');
       return el && (el.innerText.includes("100") || el.style.width === "100%");
@@ -112,7 +112,6 @@ app.post('/submit', async (req, res) => {
 
     await browser.close();
 
-    // Handle the popup status and send the appropriate response
     if (popupStatus === 'Success') {
       pushLog("🎉 Success: Views added!");
       return res.json({ message: "✅ Success: Views successfully added!" });
@@ -131,7 +130,6 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-// Start the Express server
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
 });
