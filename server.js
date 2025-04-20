@@ -1,17 +1,17 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
+require('dotenv').config(); // For local .env files
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SERVER_NAME = process.env.SERVER_NAME || "Default Server";
 
 app.use(cors());
 app.use(express.json());
 
-// Per-session logs and clients
 const sessions = new Map(); // key: sessionId, value: { res, logs[] }
 
-// Stream logs to frontend per session
 app.get('/progress', (req, res) => {
   const sessionId = req.query.sessionId;
   if (!sessionId) return res.status(400).end();
@@ -32,21 +32,20 @@ app.get('/progress', (req, res) => {
   req.on('close', () => {
     const session = sessions.get(sessionId);
     if (session && session.res === res) {
-      sessions.delete(sessionId); // clean up
+      sessions.delete(sessionId);
     }
   });
 });
 
-// Helper to send logs to the right client
 function pushLog(sessionId, message) {
-  console.log(`[${sessionId}] ${message}`);
+  const fullMessage = `[${SERVER_NAME}] ${message}`;
+  console.log(`[${sessionId}] ${fullMessage}`);
   const session = sessions.get(sessionId);
   if (!session) return;
-  session.logs.push(message);
-  if (session.res) session.res.write(`data: ${message}\n\n`);
+  session.logs.push(fullMessage);
+  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
 }
 
-// TikTok automation handler
 app.post('/submit', async (req, res) => {
   const { link, sessionId } = req.body;
   if (!link || !sessionId) {
@@ -54,9 +53,7 @@ app.post('/submit', async (req, res) => {
   }
 
   let browser;
-
   try {
-    // Clear previous logs for this session
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
 
     pushLog(sessionId, "🚀 Let it begin...");
@@ -93,20 +90,18 @@ app.post('/submit', async (req, res) => {
     pushLog(sessionId, "⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
-    // Simulate frontend progress
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(sessionId, `Progress: ${progress}%`);
       await new Promise(resolve => setTimeout(resolve, 300));
     }
 
-    // Wait for actual progress bar to reach 100% or disappear
     await page.waitForFunction(() => {
       const el = document.querySelector('.progress-bar');
       return el && (el.innerText.includes("100") || el.style.width === "100%");
     }, { timeout: 60000 });
 
     pushLog(sessionId, "✅ Progress complete. Finalizing...");
-    await new Promise(resolve => setTimeout(resolve, 30000)); // give time for popup
+    await new Promise(resolve => setTimeout(resolve, 30000));
 
     pushLog(sessionId, "🔍 Checking result...");
     const popupStatus = await page.evaluate(() => {
@@ -138,7 +133,6 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-// Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`${SERVER_NAME} running on port ${PORT}`);
 });
