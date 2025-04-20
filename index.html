@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>TikTok Views</title>
+  <title>TikTok Views & Likes</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -20,6 +20,7 @@
       padding: 10px 20px;
       font-size: 16px;
       margin-top: 10px;
+      margin-right: 10px;
     }
 
     .progress-container {
@@ -59,7 +60,7 @@
   </style>
 </head>
 <body>
-  <h1>Get Free TikTok Views</h1>
+  <h1>Get Free TikTok Views & Likes</h1>
 
   <select id="serverSelect">
     <option value="https://tiktok-6re7.onrender.com">Server 1</option>
@@ -72,7 +73,8 @@
 
   <input type="text" id="link" placeholder="Paste TikTok link here" />
   <br />
-  <button onclick="submitLink()">Submit</button>
+  <button onclick="submitLink('views')">Get Views</button>
+  <button onclick="submitLink('likes')">Get Likes</button>
 
   <div class="progress-container" id="progressContainer">
     <div class="progress-bar" id="progressBar"></div>
@@ -90,10 +92,10 @@
       });
     }
 
-    const sessionId = generateUUID(); // single session ID per session
+    const sessionId = generateUUID();
     let eventSource;
 
-    function submitLink() {
+    function submitLink(type = 'views') {
       const link = document.getElementById('link').value;
       const selectedServer = document.getElementById('serverSelect').value;
       const messageDiv = document.getElementById('message');
@@ -118,10 +120,8 @@
         }
       }, 300);
 
-      // Close previous EventSource if any
       if (eventSource) eventSource.close();
 
-      // Start new EventSource for the selected server
       eventSource = new EventSource(`${selectedServer}/progress?sessionId=${sessionId}`);
       eventSource.onmessage = function(event) {
         const log = event.data;
@@ -132,7 +132,7 @@
       fetch(`${selectedServer}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ link, sessionId })
+        body: JSON.stringify({ link, sessionId, type })
       })
       .then(res => res.json())
       .then(data => {
