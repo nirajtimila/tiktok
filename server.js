@@ -1,7 +1,7 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
-require('dotenv').config(); // For local .env files
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,7 +10,7 @@ const SERVER_NAME = process.env.SERVER_NAME || "Default Server";
 app.use(cors());
 app.use(express.json());
 
-const sessions = new Map(); // key: sessionId, value: { res, logs[] }
+const sessions = new Map();
 
 app.get('/progress', (req, res) => {
   const sessionId = req.query.sessionId;
@@ -47,19 +47,20 @@ function pushLog(sessionId, message) {
 }
 
 app.post('/submit', async (req, res) => {
-  const { link, sessionId } = req.body;
+  const { link, sessionId, type } = req.body;
   if (!link || !sessionId) {
     return res.status(400).json({ message: "TikTok link and sessionId are required" });
   }
+
+  const targetURL = type === 'likes' ? 'https://leofame.com/free-tiktok-likes' : 'https://leofame.com/free-tiktok-views';
 
   let browser;
   try {
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
 
-    pushLog(sessionId, "🚀 Let it begin...");
+    pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-    //pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
     browser = await puppeteer.launch({
       headless: true,
@@ -77,8 +78,8 @@ app.post('/submit', async (req, res) => {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    pushLog(sessionId, "🌐 Navigating to site...");
-    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
+    pushLog(sessionId, `🌐 Navigating to ${targetURL}...`);
+    await page.goto(targetURL, { waitUntil: 'load' });
 
     pushLog(sessionId, "📝 Typing TikTok link...");
     await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
@@ -116,8 +117,8 @@ app.post('/submit', async (req, res) => {
     await browser.close();
 
     if (popupStatus === 'Success') {
-      pushLog(sessionId, "🎉 Success: Views added!");
-      return res.json({ message: "✅ Success: Views successfully added!" });
+      pushLog(sessionId, "🎉 Success!");
+      return res.json({ message: `✅ Success: ${type === 'likes' ? 'Likes' : 'Views'} successfully added!` });
     } else if (popupStatus === 'Error') {
       pushLog(sessionId, "❌ Error: Submission failed.");
       return res.json({ message: "⚠️ Error: Try again later." });
