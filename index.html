@@ -10,7 +10,7 @@
       margin-top: 100px;
     }
 
-    input {
+    input, select {
       padding: 10px;
       width: 300px;
       font-size: 16px;
@@ -60,6 +60,16 @@
 </head>
 <body>
   <h1>Get Free TikTok Views</h1>
+
+  <select id="serverSelect">
+    <option value="https://tiktok-6re7.onrender.com">Server 1</option>
+    <option value="https://tiktok-2-589r.onrender.com">Server 2</option>
+    <option value="https://tiktok-3-rmub.onrender.com">Server 3</option>
+    <option value="https://tiktok-4.onrender.com">Server 4</option>
+    <option value="https://tiktok-5.onrender.com">Server 5</option>
+  </select>
+  <br><br>
+
   <input type="text" id="link" placeholder="Paste TikTok link here" />
   <br />
   <button onclick="submitLink()">Submit</button>
@@ -72,7 +82,6 @@
   <div id="logs"></div>
 
   <script>
-    // Generate a UUID without external libraries
     function generateUUID() {
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         const r = Math.random() * 16 | 0;
@@ -81,20 +90,12 @@
       });
     }
 
-    const backendUrl = 'https://tiktok-6re7.onrender.com';
-    const sessionId = generateUUID(); // Create session ID once
-
-    // Live log streaming per session
-    const eventSource = new EventSource(`${backendUrl}/progress?sessionId=${sessionId}`);
-    eventSource.onmessage = function(event) {
-      const log = event.data;
-      const logsDiv = document.getElementById('logs');
-      logsDiv.innerHTML += `<p>${log}</p>`;
-      logsDiv.scrollTop = logsDiv.scrollHeight;
-    };
+    const sessionId = generateUUID(); // single session ID per session
+    let eventSource;
 
     function submitLink() {
       const link = document.getElementById('link').value;
+      const selectedServer = document.getElementById('serverSelect').value;
       const messageDiv = document.getElementById('message');
       const progressContainer = document.getElementById('progressContainer');
       const progressBar = document.getElementById('progressBar');
@@ -107,7 +108,7 @@
 
       messageDiv.innerText = '';
       progressContainer.style.display = 'block';
-      logsDiv.innerHTML = ''; // Clear logs
+      logsDiv.innerHTML = '';
 
       let progress = 0;
       const interval = setInterval(() => {
@@ -117,7 +118,18 @@
         }
       }, 300);
 
-      fetch(`${backendUrl}/submit`, {
+      // Close previous EventSource if any
+      if (eventSource) eventSource.close();
+
+      // Start new EventSource for the selected server
+      eventSource = new EventSource(`${selectedServer}/progress?sessionId=${sessionId}`);
+      eventSource.onmessage = function(event) {
+        const log = event.data;
+        logsDiv.innerHTML += `<p>${log}</p>`;
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+      };
+
+      fetch(`${selectedServer}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ link, sessionId })
