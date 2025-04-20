@@ -2,6 +2,7 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
@@ -25,6 +26,7 @@ app.get('/progress', (req, res) => {
 
   logs.forEach(sendLog);
 
+  // Clean up clientRes when the client disconnects
   req.on('close', () => {
     clientRes = null;
   });
@@ -36,6 +38,27 @@ function pushLog(message) {
   if (clientRes) clientRes.write(`data: ${message}\n\n`);
 }
 
+// Function to determine the correct Chromium executable path
+function getChromiumPath() {
+  const candidates = [
+    process.env.CHROMIUM_PATH,                   // from Config Vars (GUI)
+    '/app/.apt/usr/bin/chromium-browser',          // common with some buildpacks
+    '/app/.apt/usr/bin/chromium'                   // alternative candidate
+  ];
+  
+  for (let candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      console.log(`Using Chromium binary at: ${candidate}`);
+      return candidate;
+    }
+  }
+  
+  // Fallback to Puppeteer's default executable path (may work locally)
+  const fallback = puppeteer.executablePath();
+  console.warn(`No Chromium binary found in candidates, using default: ${fallback}`);
+  return fallback;
+}
+
 app.post('/submit', async (req, res) => {
   const { link } = req.body;
   if (!link) return res.status(400).json({ message: "TikTok link is required" });
@@ -45,8 +68,18 @@ app.post('/submit', async (req, res) => {
   pushLog("🚀 Let it begin...");
 
   try {
-    const chromiumPath = process.env.CHROMIUM_PATH || puppeteer.executablePath();
+    // Attempt a test launch to verify Chrome is installable
+    try {
+      await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+    } catch (error) {
+      pushLog("❌ Chrome installation failed during test launch");
+      return res.status(500).json({ message: "❌ Chrome installation failed. Please check the configuration." });
+    }
 
+    const chromiumPath = getChromiumPath();
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -69,6 +102,7 @@ app.post('/submit', async (req, res) => {
     pushLog("⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
+    // Simulated progress for frontend updates
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(`Progress: ${progress}%`);
       if (clientRes) {
