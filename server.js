@@ -47,6 +47,7 @@ app.post('/submit', async (req, res) => {
     logs = []; // Reset logs
     pushLog("🚀 Let it begin...");
 
+    // Launch Puppeteer browser
     browser = await puppeteer.launch({
       headless: true, // Run in headless mode (hidden)
       args: ['--no-sandbox', '--disable-setuid-sandbox']
