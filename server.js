@@ -53,9 +53,9 @@ app.post('/submit', async (req, res) => {
     logs = [];
     pushLog("🚀 Let it begin...");
 
-    const executablePath = '/usr/bin/google-chrome'; // Use Chromium in Docker
-
-    pushLog(`Using Chrome path: ${executablePath}`);
+    // Use Puppeteer's bundled Chromium, or adjust if you're in a specific environment
+    const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
+    pushLog(`Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
     browser = await puppeteer.launch({
       headless: true,
@@ -64,10 +64,9 @@ app.post('/submit', async (req, res) => {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--no-zygote',
-        '--single-process',
+        '--single-process'
       ]
     });
 
