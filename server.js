@@ -25,16 +25,15 @@ app.get('/progress', (req, res) => {
 
   logs.forEach(sendLog);
 
-  // Clean up clientRes when the client disconnects
   req.on('close', () => {
-    clientRes = null; // Clean up when client disconnects
+    clientRes = null;
   });
 });
 
 function pushLog(message) {
-  console.log(message); // Log to the terminal
+  console.log(message);
   logs.push(message);
-  if (clientRes) clientRes.write(`data: ${message}\n\n`); // Send log to client
+  if (clientRes) clientRes.write(`data: ${message}\n\n`);
 }
 
 app.post('/submit', async (req, res) => {
@@ -44,25 +43,29 @@ app.post('/submit', async (req, res) => {
   let browser;
 
   try {
-    logs = []; // Reset logs
+    logs = []; 
     pushLog("🚀 Let it begin...");
 
-    // Set the environment variable for CHROME_BIN if not set
-    const browserExecutablePath = process.env.CHROME_BIN || '/app/.apt/usr/bin/google-chrome-stable';
-
-    pushLog(`Using Chrome path: ${browserExecutablePath}`);
+    // Use chrome_path if set, otherwise fall back to default path
+    const chromeExecutablePath = process.env.CHROME_BIN || '/app/.apt/usr/bin/google-chrome-stable';
+    pushLog(`Using Chrome path: ${chromeExecutablePath}`);
 
     browser = await puppeteer.launch({
-      headless: true, // Run in headless mode (hidden)
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: browserExecutablePath // Explicitly set the Chrome executable path
+      headless: true, 
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', // Extra argument to avoid memory issues
+        '--remote-debugging-port=9222' // Ensure debugging port is open
+      ],
+      executablePath: chromeExecutablePath
     });
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
     pushLog("🌐 Navigating to site...");
-    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' }); // Wait for full page load
+    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
 
     pushLog("📝 Typing TikTok link...");
     await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
@@ -74,13 +77,12 @@ app.post('/submit', async (req, res) => {
     pushLog("⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
-    // Manually trigger progress updates to frontend
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(`Progress: ${progress}%`);
       if (clientRes) {
         clientRes.write(`data: Progress: ${progress}%\n\n`);
       }
-      await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     await page.waitForFunction(() => {
@@ -121,6 +123,5 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-// Use Heroku's assigned port or fallback to 3000 for local testing
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 Server running at http://localhost:${port}`));
