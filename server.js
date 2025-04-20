@@ -25,16 +25,15 @@ app.get('/progress', (req, res) => {
 
   logs.forEach(sendLog);
 
-  // Clean up clientRes when the client disconnects
   req.on('close', () => {
-    clientRes = null; // Clean up when client disconnects
+    clientRes = null;
   });
 });
 
 function pushLog(message) {
-  console.log(message); // Log to the terminal
+  console.log(message);
   logs.push(message);
-  if (clientRes) clientRes.write(`data: ${message}\n\n`); // Send log to client
+  if (clientRes) clientRes.write(`data: ${message}\n\n`);
 }
 
 app.post('/submit', async (req, res) => {
@@ -42,30 +41,23 @@ app.post('/submit', async (req, res) => {
   if (!link) return res.status(400).json({ message: "TikTok link is required" });
 
   let browser;
+  logs = [];
+  pushLog("🚀 Let it begin...");
 
   try {
-    logs = []; // Reset logs
-    pushLog("🚀 Let it begin...");
-
-    // Ensure Puppeteer installs the correct version of Chrome
-    try {
-      await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    } catch (error) {
-      pushLog("❌ Chrome installation failed");
-      return res.status(500).json({ message: "❌ Chrome installation failed. Please check the configuration." });
-    }
+    const chromiumPath = process.env.CHROMIUM_PATH || puppeteer.executablePath();
 
     browser = await puppeteer.launch({
-      headless: true, // Run in headless mode (hidden)
+      headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: puppeteer.executablePath() // Ensure Puppeteer uses the correct binary
+      executablePath: chromiumPath
     });
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
     pushLog("🌐 Navigating to site...");
-    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' }); // Wait for full page load
+    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
 
     pushLog("📝 Typing TikTok link...");
     await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
@@ -77,13 +69,12 @@ app.post('/submit', async (req, res) => {
     pushLog("⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
-    // Manually trigger progress updates to frontend
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(`Progress: ${progress}%`);
       if (clientRes) {
         clientRes.write(`data: Progress: ${progress}%\n\n`);
       }
-      await new Promise(resolve => setTimeout(resolve, 300)); // Simulate delay
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     await page.waitForFunction(() => {
@@ -124,6 +115,5 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-// Use Heroku's assigned port or fallback to 3000 for local testing
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 Server running at http://localhost:${port}`));
