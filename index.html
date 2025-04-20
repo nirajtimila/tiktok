@@ -69,24 +69,39 @@
   </div>
 
   <div id="message"></div>
-
   <div id="logs"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/uuid@9.0.0/dist/umd/uuidv4.min.js"></script>
   <script>
     const backendUrl = 'https://tiktok-6re7.onrender.com';
+    const sessionId = uuidv4(); // Generate unique session ID
+
+    // Start log stream
+    const eventSource = new EventSource(`${backendUrl}/progress?sessionId=${sessionId}`);
+    eventSource.onmessage = function(event) {
+      const log = event.data;
+      const logsDiv = document.getElementById('logs');
+      logsDiv.innerHTML += `<p>${log}</p>`;
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    };
 
     function submitLink() {
       const link = document.getElementById('link').value;
+      const messageDiv = document.getElementById('message');
+      const progressContainer = document.getElementById('progressContainer');
+      const progressBar = document.getElementById('progressBar');
+      const logsDiv = document.getElementById('logs');
+
       if (!link) {
-        document.getElementById('message').innerText = "Please enter a TikTok link.";
+        messageDiv.innerText = "Please enter a TikTok link.";
         return;
       }
 
-      document.getElementById('message').innerText = '';
-      document.getElementById('progressContainer').style.display = 'block';
-      let progress = 0;
-      const progressBar = document.getElementById('progressBar');
+      messageDiv.innerText = '';
+      progressContainer.style.display = 'block';
+      logsDiv.innerHTML = ''; // Clear logs
 
+      let progress = 0;
       const interval = setInterval(() => {
         if (progress < 100) {
           progress += 2;
@@ -97,34 +112,25 @@
       fetch(`${backendUrl}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ link })
+        body: JSON.stringify({ link, sessionId })
       })
       .then(res => res.json())
       .then(data => {
         clearInterval(interval);
         progressBar.style.width = "100%";
         setTimeout(() => {
-          document.getElementById('message').innerText = data.message;
-          document.getElementById('progressContainer').style.display = 'none';
+          messageDiv.innerText = data.message;
+          progressContainer.style.display = 'none';
           progressBar.style.width = "0%";
-        }, 500);
+        }, 1000);
       })
       .catch(err => {
         clearInterval(interval);
-        document.getElementById('message').innerText = "❌ Something went wrong.";
-        document.getElementById('progressContainer').style.display = 'none';
+        messageDiv.innerText = "❌ Something went wrong.";
+        progressContainer.style.display = 'none';
         progressBar.style.width = "0%";
       });
     }
-
-    // Live logs via Server-Sent Events
-    const eventSource = new EventSource(`${backendUrl}/progress`);
-    eventSource.onmessage = function(event) {
-      const log = event.data;
-      const logsDiv = document.getElementById('logs');
-      logsDiv.innerHTML += `<p>${log}</p>`;
-      logsDiv.scrollTop = logsDiv.scrollHeight;
-    };
   </script>
 </body>
 </html>
