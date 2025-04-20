@@ -59,7 +59,7 @@ app.post('/submit', async (req, res) => {
     pushLog(sessionId, "🚀 Let it begin...");
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-    pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
+    //pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
     browser = await puppeteer.launch({
       headless: true,
