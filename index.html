@@ -2,65 +2,117 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>TikTok Views & Likes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TikTok Views & Likes Booster</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin-top: 100px;
+    * {
+      box-sizing: border-box;
     }
 
-    input, select {
-      padding: 10px;
-      width: 300px;
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #1e1f26, #2d2f4c);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+
+    select, input {
+      padding: 12px;
+      width: 90%;
+      max-width: 320px;
+      margin-bottom: 15px;
       font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      outline: none;
     }
 
     button {
-      padding: 10px 20px;
+      padding: 12px 24px;
       font-size: 16px;
-      margin-top: 10px;
-      margin-right: 10px;
+      margin: 10px 5px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #ff2d55;
+      color: white;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      background: #ff4d75;
+      transform: translateY(-2px);
     }
 
     .progress-container {
-      width: 300px;
-      height: 30px;
-      background: #eee;
-      border-radius: 5px;
-      margin: 20px auto;
+      width: 90%;
+      max-width: 320px;
+      height: 20px;
+      background: #444;
+      border-radius: 10px;
       overflow: hidden;
+      margin: 20px 0;
       display: none;
     }
 
     .progress-bar {
       height: 100%;
       width: 0%;
-      background: #4caf50;
+      background: linear-gradient(to right, #00ff99, #00ccff);
       transition: width 0.2s ease-in-out;
     }
 
     #message {
       margin-top: 20px;
-      font-size: 18px;
+      font-size: 16px;
+      color: #eee;
     }
 
     #logs {
-      margin-top: 20px;
-      text-align: left;
-      font-size: 14px;
-      background-color: #f4f4f4;
+      background-color: rgba(255,255,255,0.1);
       padding: 10px;
-      max-height: 200px;
-      overflow-y: scroll;
+      border-radius: 10px;
+      max-height: 150px;
+      overflow-y: auto;
       width: 90%;
-      margin: 0 auto;
-      border-radius: 5px;
+      max-width: 360px;
+      font-size: 14px;
+      text-align: left;
+      margin-top: 15px;
+    }
+
+    #loadingSteps {
+      white-space: pre-line;
+      font-size: 15px;
+      margin-top: 10px;
+      color: #a1e3ff;
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 22px;
+      }
+
+      button {
+        width: 90%;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>Get Free TikTok Views & Likes</h1>
+  <h1>Free TikTok Views & Likes Booster</h1>
 
   <select id="serverSelect">
     <option value="https://tiktok-6re7.onrender.com">Server 1</option>
@@ -69,10 +121,9 @@
     <option value="https://tiktok-4.onrender.com">Server 4</option>
     <option value="https://tiktok-5.onrender.com">Server 5</option>
   </select>
-  <br><br>
 
-  <input type="text" id="link" placeholder="Paste TikTok link here" />
-  <br />
+  <input type="text" id="link" placeholder="Paste your TikTok link here" />
+
   <button onclick="submitLink('views')">Get Views</button>
   <button onclick="submitLink('likes')">Get Likes</button>
 
@@ -80,6 +131,7 @@
     <div class="progress-bar" id="progressBar"></div>
   </div>
 
+  <div id="loadingSteps"></div>
   <div id="message"></div>
   <div id="logs"></div>
 
@@ -94,6 +146,15 @@
 
     const sessionId = generateUUID();
     let eventSource;
+    let stepInterval;
+
+    const loadingMessages = [
+      "✅ Step 1: Preparing boost engine...",
+      "✅ Step 2: Connecting to TikTok servers...",
+      "✅ Step 3: Verifying your link...",
+      "✅ Step 4: Sending your request...",
+      "✅ Step 5: Finalizing everything..."
+    ];
 
     function submitLink(type = 'views') {
       const link = document.getElementById('link').value;
@@ -102,6 +163,7 @@
       const progressContainer = document.getElementById('progressContainer');
       const progressBar = document.getElementById('progressBar');
       const logsDiv = document.getElementById('logs');
+      const loadingStepsDiv = document.getElementById('loadingSteps');
 
       if (!link) {
         messageDiv.innerText = "Please enter a TikTok link.";
@@ -111,6 +173,8 @@
       messageDiv.innerText = '';
       progressContainer.style.display = 'block';
       logsDiv.innerHTML = '';
+      loadingStepsDiv.innerText = '';
+      loadingStepsDiv.style.display = 'block';
 
       let progress = 0;
       const interval = setInterval(() => {
@@ -119,6 +183,16 @@
           progressBar.style.width = progress + "%";
         }
       }, 300);
+
+      let step = 0;
+      stepInterval = setInterval(() => {
+        if (step < loadingMessages.length) {
+          loadingStepsDiv.innerText += loadingMessages[step] + "\n";
+          step++;
+        } else {
+          clearInterval(stepInterval);
+        }
+      }, 1000);
 
       if (eventSource) eventSource.close();
 
@@ -137,18 +211,22 @@
       .then(res => res.json())
       .then(data => {
         clearInterval(interval);
+        clearInterval(stepInterval);
         progressBar.style.width = "100%";
         setTimeout(() => {
           messageDiv.innerText = data.message;
           progressContainer.style.display = 'none';
           progressBar.style.width = "0%";
+          loadingStepsDiv.style.display = 'none';
         }, 1000);
       })
       .catch(err => {
         clearInterval(interval);
+        clearInterval(stepInterval);
         messageDiv.innerText = "❌ Something went wrong.";
         progressContainer.style.display = 'none';
         progressBar.style.width = "0%";
+        loadingStepsDiv.style.display = 'none';
       });
     }
   </script>
