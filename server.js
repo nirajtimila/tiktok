@@ -1,5 +1,6 @@
 const express = require('express');
 const puppeteer = require('puppeteer-core');
+const chromium = require('chrome-aws-lambda');
 const cors = require('cors');
 const path = require('path');
 
@@ -43,22 +44,20 @@ app.post('/submit', async (req, res) => {
   let browser;
 
   try {
-    logs = []; 
+    logs = [];
     pushLog("🚀 Let it begin...");
 
-    // Use chrome_path if set, otherwise fall back to default path
-    const chromeExecutablePath = process.env.CHROME_BIN || '/app/.apt/usr/bin/google-chrome-stable';
+    const chromeExecutablePath = await chromium.executablePath;
+
+    if (!chromeExecutablePath) throw new Error("Chrome executable not found.");
+
     pushLog(`Using Chrome path: ${chromeExecutablePath}`);
 
     browser = await puppeteer.launch({
-      headless: true,
-      executablePath: chromeExecutablePath, // Custom path
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--remote-debugging-port=9222'
-      ]
+      args: chromium.args,
+      executablePath: chromeExecutablePath,
+      headless: chromium.headless,
+      defaultViewport: chromium.defaultViewport,
     });
 
     const page = await browser.newPage();
@@ -79,9 +78,6 @@ app.post('/submit', async (req, res) => {
 
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(`Progress: ${progress}%`);
-      if (clientRes) {
-        clientRes.write(`data: Progress: ${progress}%\n\n`);
-      }
       await new Promise(resolve => setTimeout(resolve, 300));
     }
 
