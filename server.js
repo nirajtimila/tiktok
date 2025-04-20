@@ -78,14 +78,14 @@ app.post('/submit', async (req, res) => {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    pushLog(sessionId, `🌐 Navigating to ${targetURL}...`);
+    pushLog(sessionId, `🌐 Preparing boost engine...`);
     await page.goto(targetURL, { waitUntil: 'load' });
 
-    pushLog(sessionId, "📝 Typing TikTok link...");
+    pushLog(sessionId, "📝 Connecting to TikTok servers...");
     await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
     await page.type('input[name="free_link"]', link);
 
-    pushLog(sessionId, "🚀 Submitting...");
+    pushLog(sessionId, "🚀 Verifying your link...");
     await page.click('button[type="submit"]');
 
     pushLog(sessionId, "⏳ Waiting for progress...");
@@ -101,7 +101,7 @@ app.post('/submit', async (req, res) => {
       return el && (el.innerText.includes("100") || el.style.width === "100%");
     }, { timeout: 60000 });
 
-    pushLog(sessionId, "✅ Progress complete. Finalizing...");
+    pushLog(sessionId, "✅ Progress complete. Finalizing...Sending views/likes...");
     await new Promise(resolve => setTimeout(resolve, 30000));
 
     pushLog(sessionId, "🔍 Checking result...");
@@ -123,7 +123,7 @@ app.post('/submit', async (req, res) => {
       pushLog(sessionId, "❌ Error: Submission failed.");
       return res.json({ message: "⚠️ Error: Try again later." });
     } else {
-      pushLog(sessionId, "❔ Unknown popup status.");
+      pushLog(sessionId, "❔ Unknown error. Please try again with different video or wait 24 hour ⏳");
       return res.json({ message: "⚠️ Error: Try again later." });
     }
 
