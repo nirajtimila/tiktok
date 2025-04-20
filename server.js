@@ -2,76 +2,69 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid'); // to generate unique session IDs
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Store logs per session
-let logsBySession = {};
+// Store logs and connected clients per session
+const logs = {};
+const clients = {};
 
-// Progress endpoint to stream logs to the client
-app.get('/progress/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  
-  // Create a new log entry if the session doesn't exist
-  if (!logsBySession[sessionId]) {
-    logsBySession[sessionId] = [];
+// Push a log to a session's log stream
+function pushLog(sessionId, message) {
+  console.log(`[${sessionId}] ${message}`);
+  if (!logs[sessionId]) logs[sessionId] = [];
+  logs[sessionId].push(message);
+  if (clients[sessionId]) {
+    clients[sessionId].write(`data: ${message}\n\n`);
   }
+}
+
+// Stream logs to the client
+app.get('/progress', (req, res) => {
+  const sessionId = req.query.sessionId;
+  if (!sessionId) return res.status(400).end();
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  const sendLog = (log) => {
-    res.write(`data: ${log}\n\n`);
-  };
-
-  logsBySession[sessionId].forEach(sendLog);
+  clients[sessionId] = res;
+  (logs[sessionId] || []).forEach(log => res.write(`data: ${log}\n\n`));
 
   req.on('close', () => {
-    // Clean up after the connection is closed
-    delete logsBySession[sessionId];
+    delete clients[sessionId];
   });
 });
 
-// Helper function to log messages
-function pushLog(sessionId, message) {
-  console.log(message);
-
-  // Add to the specific session's logs
-  if (!logsBySession[sessionId]) {
-    logsBySession[sessionId] = [];
+// Clear logs every 15 seconds
+setInterval(() => {
+  for (const sessionId in logs) {
+    logs[sessionId] = [];
   }
+}, 15000);
 
-  logsBySession[sessionId].push(message);
-
-  // Keep the log count limited to avoid memory bloat
-  if (logsBySession[sessionId].length > 50) {
-    logsBySession[sessionId].shift(); // Remove oldest logs if necessary
-  }
-}
-
-// Submit endpoint to start the TikTok view process
+// Handle view generation
 app.post('/submit', async (req, res) => {
-  const { link } = req.body;
-  if (!link) return res.status(400).json({ message: "TikTok link is required" });
+  const { link, sessionId } = req.body;
+  if (!link || !sessionId) {
+    return res.status(400).json({ message: 'TikTok link and sessionId are required' });
+  }
 
-  const sessionId = uuidv4(); // Create a unique session ID for each user
   let browser;
 
   try {
-    logsBySession[sessionId] = [];
+    logs[sessionId] = [];
     pushLog(sessionId, "🚀 Let it begin...");
 
-    const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-    pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
+    const executablePath = '/usr/bin/google-chrome'; // Docker-safe path
+    pushLog(sessionId, `Using Chrome path: ${executablePath}`);
 
     browser = await puppeteer.launch({
       headless: true,
@@ -80,9 +73,10 @@ app.post('/submit', async (req, res) => {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--no-zygote',
-        '--single-process'
+        '--single-process',
       ]
     });
 
@@ -144,11 +138,6 @@ app.post('/submit', async (req, res) => {
     return res.status(500).json({ message: "❌ Automation error: " + err.message });
   }
 });
-
-// Periodically clear logs to prevent too much accumulation
-setInterval(() => {
-  logsBySession = {}; // Clear all logs every 15 seconds
-}, 15000);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
