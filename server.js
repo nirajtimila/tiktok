@@ -1,5 +1,5 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const cors = require('cors');
 const path = require('path');
 
@@ -51,14 +51,14 @@ app.post('/submit', async (req, res) => {
     pushLog(`Using Chrome path: ${chromeExecutablePath}`);
 
     browser = await puppeteer.launch({
-      headless: true, 
+      headless: true,
+      executablePath: chromeExecutablePath, // Custom path
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage', // Extra argument to avoid memory issues
-        '--remote-debugging-port=9222' // Ensure debugging port is open
-      ],
-      executablePath: chromeExecutablePath
+        '--disable-dev-shm-usage',
+        '--remote-debugging-port=9222'
+      ]
     });
 
     const page = await browser.newPage();
