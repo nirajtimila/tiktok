@@ -47,13 +47,15 @@ app.post('/submit', async (req, res) => {
     logs = []; // Reset logs
     pushLog("🚀 Let it begin...");
 
-    // Ensure Puppeteer uses the correct executable path for Chrome
+    // Set the environment variable for CHROME_BIN if not set
     const browserExecutablePath = process.env.CHROME_BIN || '/app/.apt/usr/bin/google-chrome-stable';
+
+    pushLog(`Using Chrome path: ${browserExecutablePath}`);
 
     browser = await puppeteer.launch({
       headless: true, // Run in headless mode (hidden)
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: browserExecutablePath // Use the correct executable path for Chrome
+      executablePath: browserExecutablePath // Explicitly set the Chrome executable path
     });
 
     const page = await browser.newPage();
