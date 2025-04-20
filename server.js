@@ -1,123 +1,43 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
 const chromium = require('chrome-aws-lambda');
-const cors = require('cors');
-const path = require('path');
-
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public'))); // Serve HTML from 'public' folder
+const PORT = process.env.PORT || 3000;
 
-let clientRes = null;
-let logs = [];
-
-app.get('/progress', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  clientRes = res;
-
-  const sendLog = (log) => {
-    res.write(`data: ${log}\n\n`);
-  };
-
-  logs.forEach(sendLog);
-
-  req.on('close', () => {
-    clientRes = null;
-  });
-});
-
-function pushLog(message) {
-  console.log(message);
-  logs.push(message);
-  if (clientRes) clientRes.write(`data: ${message}\n\n`);
-}
-
-app.post('/submit', async (req, res) => {
-  const { link } = req.body;
-  if (!link) return res.status(400).json({ message: "TikTok link is required" });
-
-  let browser;
+app.get('/', async (req, res) => {
+  let browser = null;
 
   try {
-    logs = [];
-    pushLog("🚀 Let it begin...");
-
-    const chromeExecutablePath = await chromium.executablePath;
-
-    if (!chromeExecutablePath) throw new Error("Chrome executable not found.");
-
-    pushLog(`Using Chrome path: ${chromeExecutablePath}`);
-
-    browser = await puppeteer.launch({
+    // Launch headless Chromium using chrome-aws-lambda
+    browser = await chromium.puppeteer.launch({
       args: chromium.args,
-      executablePath: chromeExecutablePath,
+      executablePath: await chromium.executablePath || '/usr/bin/google-chrome',
       headless: chromium.headless,
-      defaultViewport: chromium.defaultViewport,
+      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
 
-    pushLog("🌐 Navigating to site...");
-    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
+    // Navigate to a test page
+    await page.goto('https://example.com', { waitUntil: 'networkidle2' });
 
-    pushLog("📝 Typing TikTok link...");
-    await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
-    await page.type('input[name="free_link"]', link);
+    // Get the page title
+    const title = await page.title();
 
-    pushLog("🚀 Submitting...");
-    await page.click('button[type="submit"]');
-
-    pushLog("⏳ Waiting for progress...");
-    await page.waitForSelector('.progress-bar', { timeout: 60000 });
-
-    for (let progress = 0; progress <= 100; progress += 2) {
-      pushLog(`Progress: ${progress}%`);
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    await page.waitForFunction(() => {
-      const el = document.querySelector('.progress-bar');
-      return el && (el.innerText.includes("100") || el.style.width === "100%");
-    }, { timeout: 60000 });
-
-    pushLog("✅ Progress complete. Finalizing...");
-    await new Promise(resolve => setTimeout(resolve, 30000));
-
-    pushLog("🔍 Checking result...");
-    const popupStatus = await page.evaluate(() => {
-      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
-      if (!popup) return 'No Popup';
-      const icon = popup.querySelector('.swal2-icon');
-      if (icon && icon.classList.contains('swal2-icon-error')) return 'Error';
-      if (popup.classList.contains('swal2-icon-success')) return 'Success';
-      return 'Unknown';
-    });
-
-    await browser.close();
-
-    if (popupStatus === 'Success') {
-      pushLog("🎉 Success: Views added!");
-      return res.json({ message: "✅ Success: Views successfully added!" });
-    } else if (popupStatus === 'Error') {
-      pushLog("❌ Error: Submission failed.");
-      return res.json({ message: "⚠️ Error: Try again later." });
-    } else {
-      pushLog("❔ Unknown popup status.");
-      return res.json({ message: "⚠️ Error: Try again later." });
-    }
-
+    res.send(`
+      <h1>Puppeteer on Heroku is working!</h1>
+      <p>Page Title: ${title}</p>
+    `);
   } catch (err) {
-    if (browser) await browser.close();
-    pushLog(`❌ Error: ${err.message}`);
-    return res.status(500).json({ message: "❌ Automation error: " + err.message });
+    console.error('❌ Automation error:', err);
+    res.status(500).send(`❌ Automation error: ${err.message}`);
+  } finally {
+    if (browser !== null) {
+      await browser.close();
+    }
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`🚀 Server running at http://localhost:${port}`));
+// Start the Express server
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
+});
