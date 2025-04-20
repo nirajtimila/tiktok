@@ -47,10 +47,18 @@ app.post('/submit', async (req, res) => {
     logs = []; // Reset logs
     pushLog("🚀 Let it begin...");
 
-    // Launch Puppeteer browser
+    // Ensure Puppeteer installs the correct version of Chrome
+    try {
+      await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    } catch (error) {
+      pushLog("❌ Chrome installation failed");
+      return res.status(500).json({ message: "❌ Chrome installation failed. Please check the configuration." });
+    }
+
     browser = await puppeteer.launch({
       headless: true, // Run in headless mode (hidden)
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath: puppeteer.executablePath() // Ensure Puppeteer uses the correct binary
     });
 
     const page = await browser.newPage();
