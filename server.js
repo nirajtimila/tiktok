@@ -1,9 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
-const cheerio = require('cheerio');
-const { v4: uuidv4 } = require('uuid');
 const puppeteer = require('puppeteer');
+const { v4: uuidv4 } = require('uuid');
 const SSE = require('express-sse');
 
 const app = express();
@@ -15,24 +13,27 @@ app.use(express.json());
 
 const sessions = {};
 
-// Updated proxy fetch function
+// Use Puppeteer to scrape proxies from https://free-proxy-list.net/
 async function getProxyWithPort8080() {
   try {
-    const response = await fetch('https://free-proxy-list.net/');
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    const proxies = [];
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
 
-    $('#proxylisttable tbody tr').each((index, element) => {
-      const tds = $(element).find('td');
-      const ip = $(tds[0]).text().trim();
-      const port = $(tds[1]).text().trim();
-      const isHttps = $(tds[6]).text().trim();
+    await page.goto('https://free-proxy-list.net/', { waitUntil: 'networkidle2' });
 
-      if (port === '8080') {
-        proxies.push({ ip, port, isHttps });
-      }
+    const proxies = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('#proxylisttable tbody tr'));
+      return rows.map(row => {
+        const cells = row.querySelectorAll('td');
+        return {
+          ip: cells[0]?.innerText.trim(),
+          port: cells[1]?.innerText.trim(),
+          isHttps: cells[6]?.innerText.trim()
+        };
+      }).filter(proxy => proxy.port === '8080');
     });
+
+    await browser.close();
 
     console.log(`Found ${proxies.length} proxies on port 8080`);
 
@@ -47,7 +48,6 @@ async function getProxyWithPort8080() {
   }
 }
 
-// Main endpoint
 app.post('/submit', async (req, res) => {
   const { link, sessionId } = req.body;
   if (!link || !sessionId) {
@@ -89,14 +89,12 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-// SSE event endpoint
 app.get('/events/:sessionId', (req, res) => {
   const sessionId = req.params.sessionId;
   sessions[sessionId] = sse;
   sse.init(req, res);
 });
 
-// Server start
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
