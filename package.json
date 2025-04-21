@@ -30,7 +30,9 @@
     "puppeteer": "^24.6.1",
     "uuid":	"^11.1.0",
     "dotenv":	"^16.5.0",
-    "socks-proxy-agent": "^8.0.5"
+    "socks-proxy-agent": "^8.0.5",
+    "socket.io":	"^4.8.1",
+    "http":	"^0.0.1-security"
     
   }
 }
