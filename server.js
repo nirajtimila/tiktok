@@ -1,8 +1,8 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
-const { SocksProxyAgent } = require('socks-proxy-agent'); // Import SOCKS Proxy Agent
 require('dotenv').config(); // For local .env files
+const SocksProxyAgent = require('socks-proxy-agent');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -48,19 +48,21 @@ function pushLog(sessionId, message) {
 }
 
 app.post('/submit', async (req, res) => {
-  const { link, sessionId, proxy } = req.body; // Proxy passed as part of the request
-  if (!link || !sessionId) {
-    return res.status(400).json({ message: "TikTok link and sessionId are required" });
+  const { link, sessionId, proxy } = req.body;
+
+  // Validate the incoming request
+  if (!link || !sessionId || !proxy || !proxy.ip || !proxy.port) {
+    return res.status(400).json({ message: "TikTok link, sessionId, and valid proxy (ip & port) are required" });
   }
 
   let browser;
   try {
+    // Set up a new session if it doesn't already exist
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
 
     pushLog(sessionId, "🚀 Let it begin...");
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-    //pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
     // Set up SOCKS5 Proxy
     const proxyUrl = `socks5://${proxy.ip}:${proxy.port}`;
@@ -79,7 +81,6 @@ app.post('/submit', async (req, res) => {
         `--proxy-server=${proxyUrl}` // Set the proxy here
       ],
       ignoreHTTPSErrors: true,
-      // pass the agent to the page to use the proxy
       defaultViewport: { width: 1280, height: 800 },
       userDataDir: './puppeteer_data',
       pipe: true
