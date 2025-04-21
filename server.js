@@ -66,9 +66,9 @@ app.post('/submit', async (req, res) => {
 
     // Randomly select a proxy from the proxies list
     const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
-    const SOCKS5_PROXY = `socks5://${randomProxy.username}:${randomProxy.password}@${randomProxy.ip}:${randomProxy.port}`;
+    const HTTP_PROXY = `http://${randomProxy.username}:${randomProxy.password}@${randomProxy.ip}:${randomProxy.port}`;
 
-    pushLog(sessionId, `Using proxy: ${SOCKS5_PROXY}`);
+    pushLog(sessionId, `Using proxy: ${HTTP_PROXY}`);
 
     browser = await puppeteer.launch({
       headless: true,
@@ -80,7 +80,7 @@ app.post('/submit', async (req, res) => {
         '--disable-gpu',
         '--no-zygote',
         '--single-process',
-        `--proxy-server=${SOCKS5_PROXY}` // Adding SOCKS5 proxy configuration
+        `--proxy-server=${HTTP_PROXY}` // Adding HTTP proxy configuration
       ]
     });
 
