@@ -14,7 +14,7 @@ app.use(express.json());
 const sessions = {};
 
 // Use Puppeteer to scrape proxies from https://free-proxy-list.net/
-async function getProxyWithPort3128() {
+async function getProxyWithPort443() {
   try {
     const browser = await puppeteer.launch({ 
       headless: true,
@@ -27,17 +27,17 @@ async function getProxyWithPort3128() {
     // Scrape proxies from the <textarea> containing proxy list
     const proxiesText = await page.$eval('textarea.form-control', el => el.value);
 
-    // Split the text by new lines, then filter proxies by port 3128
+    // Split the text by new lines, then filter proxies by port 443
     const proxies = proxiesText.split('\n').map(proxy => {
       const [ip, port] = proxy.split(':');
       return { ip: ip.trim(), port: port ? port.trim() : '' };
-    }).filter(proxy => proxy.port && proxy.port === '3128');
+    }).filter(proxy => proxy.port && proxy.port === '443');
 
     await browser.close();
 
-    console.log(`Found ${proxies.length} proxies on port 3128`);
+    console.log(`Found ${proxies.length} proxies on port 443`);
 
-    if (proxies.length === 0) throw new Error('No proxies with port 3128 found.');
+    if (proxies.length === 0) throw new Error('No proxies with port 443 found.');
 
     const selectedProxy = proxies[Math.floor(Math.random() * proxies.length)];
     console.log('Using proxy:', `${selectedProxy.ip}:${selectedProxy.port}`);
@@ -58,7 +58,7 @@ app.post('/submit', async (req, res) => {
   sse.send('Launching Puppeteer...', sessionId);
 
   try {
-    const proxy = await getProxyWithPort3128();
+    const proxy = await getProxyWithPort443();
     const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
 
     const browser = await puppeteer.launch({
