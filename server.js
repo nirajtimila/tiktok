@@ -14,30 +14,35 @@ app.use(express.json());
 const sessions = {};
 
 // Use Puppeteer to scrape proxies from https://free-proxy-list.net/
-async function getProxyWithPort80() {
+async function getEliteProxyPort80() {
   try {
-    const browser = await puppeteer.launch({ 
+    const browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'] // Added --no-sandbox flag
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     const page = await browser.newPage();
 
     await page.goto('https://free-proxy-list.net/', { waitUntil: 'networkidle2' });
 
-    // Scrape proxies from the <textarea> containing proxy list
-    const proxiesText = await page.$eval('textarea.form-control', el => el.value);
-
-    // Split the text by new lines, then filter proxies by port 80
-    const proxies = proxiesText.split('\n').map(proxy => {
-      const [ip, port] = proxy.split(':');
-      return { ip: ip.trim(), port: port ? port.trim() : '' };
-    }).filter(proxy => proxy.port && proxy.port === '80');
+    // Extract elite proxies on port 80 from the table
+    const proxies = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('#proxylisttable tbody tr'));
+      return rows.map(row => {
+        const cells = row.querySelectorAll('td');
+        return {
+          ip: cells[0]?.innerText.trim(),
+          port: cells[1]?.innerText.trim(),
+          anonymity: cells[4]?.innerText.trim(),
+          isHttps: cells[6]?.innerText.trim()
+        };
+      }).filter(proxy => proxy.port === '80' && proxy.anonymity.toLowerCase() === 'elite proxy');
+    });
 
     await browser.close();
 
-    console.log(`Found ${proxies.length} proxies on port 80`);
+    console.log(`Found ${proxies.length} elite proxies on port 80`);
 
-    if (proxies.length === 0) throw new Error('No proxies with port 80 found.');
+    if (proxies.length === 0) throw new Error('No elite proxies with port 80 found.');
 
     const selectedProxy = proxies[Math.floor(Math.random() * proxies.length)];
     console.log('Using proxy:', `${selectedProxy.ip}:${selectedProxy.port}`);
@@ -58,11 +63,11 @@ app.post('/submit', async (req, res) => {
   sse.send('Launching Puppeteer...', sessionId);
 
   try {
-    const proxy = await getProxyWithPort80();
+    const proxy = await getEliteProxyPort80();
     const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
 
     const browser = await puppeteer.launch({
-      args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'], // Added --no-sandbox flag
+      args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'],
       headless: true
     });
 
