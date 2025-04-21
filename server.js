@@ -1,75 +1,150 @@
 const express = require('express');
-const cors = require('cors');
 const puppeteer = require('puppeteer');
-const { v4: uuidv4 } = require('uuid');
-const SSE = require('express-sse');
-const proxies = require('./proxies'); // <-- Your proxy list
+const cors = require('cors');
+require('dotenv').config(); // For local .env files
 
 const app = express();
-const sse = new SSE();
 const PORT = process.env.PORT || 3000;
+const SERVER_NAME = process.env.SERVER_NAME || "Default Server";
+
+// Get proxy details from environment variables
+const PROXY_IP = process.env.PROXY_IP || 'your.proxy.ip';
+const PROXY_PORT = process.env.PROXY_PORT || '80'; // replace with actual proxy port
+const PROXY_USERNAME = process.env.PROXY_USERNAME || 'your_proxy_username';
+const PROXY_PASSWORD = process.env.PROXY_PASSWORD || 'your_proxy_password';
 
 app.use(cors());
 app.use(express.json());
 
-const sessions = {};
+const sessions = new Map(); // key: sessionId, value: { res, logs[] }
+
+app.get('/progress', (req, res) => {
+  const sessionId = req.query.sessionId;
+  if (!sessionId) return res.status(400).end();
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  if (!sessions.has(sessionId)) {
+    sessions.set(sessionId, { res, logs: [] });
+  } else {
+    const session = sessions.get(sessionId);
+    session.res = res;
+    session.logs.forEach(log => res.write(`data: ${log}\n\n`));
+  }
+
+  req.on('close', () => {
+    const session = sessions.get(sessionId);
+    if (session && session.res === res) {
+      sessions.delete(sessionId);
+    }
+  });
+});
+
+function pushLog(sessionId, message) {
+  const fullMessage = `[${SERVER_NAME}] ${message}`;
+  console.log(`[${sessionId}] ${fullMessage}`);
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  session.logs.push(fullMessage);
+  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
+}
 
 app.post('/submit', async (req, res) => {
   const { link, sessionId } = req.body;
   if (!link || !sessionId) {
-    return res.status(400).json({ error: 'Missing link or sessionId' });
+    return res.status(400).json({ message: "TikTok link and sessionId are required" });
   }
 
-  sessions[sessionId] = sse;
-  sse.send('Launching Puppeteer...', sessionId);
-
-  // Pick a random proxy
-  const proxy = proxies[Math.floor(Math.random() * proxies.length)];
-  const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
-  console.log(`Using proxy: ${proxyUrl}`);
-
+  let browser;
   try {
-    const browser = await puppeteer.launch({
-      args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'],
-      headless: true
+    sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
+
+    pushLog(sessionId, "🚀 Let it begin...");
+
+    const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
+
+    // Set up Puppeteer with the proxy
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process',
+        `--proxy-server=http://${PROXY_IP}:${PROXY_PORT}`
+      ]
     });
 
     const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
 
-    // Authenticate proxy
-    await page.authenticate({
-      username: proxy.username,
-      password: proxy.password
+    // Proxy authentication if required
+    if (PROXY_USERNAME && PROXY_PASSWORD) {
+      await page.authenticate({ username: PROXY_USERNAME, password: PROXY_PASSWORD });
+    }
+
+    pushLog(sessionId, "🌐 Navigating to site...");
+    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
+
+    pushLog(sessionId, "📝 Typing TikTok link...");
+    await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
+    await page.type('input[name="free_link"]', link);
+
+    pushLog(sessionId, "🚀 Submitting...");
+    await page.click('button[type="submit"]');
+
+    pushLog(sessionId, "⏳ Waiting for progress...");
+    await page.waitForSelector('.progress-bar', { timeout: 60000 });
+
+    for (let progress = 0; progress <= 100; progress += 2) {
+      pushLog(sessionId, `Progress: ${progress}%`);
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    await page.waitForFunction(() => {
+      const el = document.querySelector('.progress-bar');
+      return el && (el.innerText.includes("100") || el.style.width === "100%");
+    }, { timeout: 60000 });
+
+    pushLog(sessionId, "✅ Progress complete. Finalizing...");
+    await new Promise(resolve => setTimeout(resolve, 30000));
+
+    pushLog(sessionId, "🔍 Checking result...");
+    const popupStatus = await page.evaluate(() => {
+      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
+      if (!popup) return 'No Popup';
+      const icon = popup.querySelector('.swal2-icon');
+      if (icon && icon.classList.contains('swal2-icon-error')) return 'Error';
+      if (popup.classList.contains('swal2-icon-success')) return 'Success';
+      return 'Unknown';
     });
 
-    sse.send('Navigating to site...', sessionId);
-    await page.goto('https://leofame.com/free-tiktok-views', { timeout: 60000 });
-
-    sse.send('Filling form...', sessionId);
-    await page.type('#link', link);
-    await page.click('#submit');
-
-    sse.send('Waiting for confirmation...', sessionId);
-    await page.waitForSelector('.result', { timeout: 30000 });
-
-    const resultText = await page.$eval('.result', el => el.textContent.trim());
-    sse.send(`Done: ${resultText}`, sessionId);
-
     await browser.close();
-    res.json({ success: true, message: resultText });
+
+    if (popupStatus === 'Success') {
+      pushLog(sessionId, "🎉 Success: Views added!");
+      return res.json({ message: "✅ Success: Views successfully added!" });
+    } else if (popupStatus === 'Error') {
+      pushLog(sessionId, "❌ Error: Submission failed.");
+      return res.json({ message: "⚠️ Error: Try again later." });
+    } else {
+      pushLog(sessionId, "❔ Unknown popup status.");
+      return res.json({ message: "⚠️ Error: Try again later." });
+    }
+
   } catch (err) {
-    console.error('Error:', err.message);
-    sse.send(`Error: ${err.message}`, sessionId);
-    res.status(500).json({ error: err.message });
+    if (browser) await browser.close();
+    pushLog(sessionId, `❌ Error: ${err.message}`);
+    return res.status(500).json({ message: "❌ Automation error: " + err.message });
   }
 });
 
-app.get('/events/:sessionId', (req, res) => {
-  const sessionId = req.params.sessionId;
-  sessions[sessionId] = sse;
-  sse.init(req, res);
-});
-
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`${SERVER_NAME} running on port ${PORT}`);
 });
