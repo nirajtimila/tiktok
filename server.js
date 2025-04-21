@@ -2,8 +2,7 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 require('dotenv').config();
-const fetch = require('node-fetch'); // Import node-fetch for ScraperAPI
-const proxies = require('./proxies');  // Import your proxy list from proxy.js
+const fetch = require('node-fetch'); // For fetching proxies
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -48,10 +47,20 @@ function pushLog(sessionId, message) {
   if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
 }
 
-// Function to get a random proxy from the proxy list
-function getRandomProxy() {
-  const randomIndex = Math.floor(Math.random() * proxies.length);
-  return proxies[randomIndex];
+// ⏬ New: Function to fetch and return a random proxy from online source
+async function getRandomProxyOnline() {
+  try {
+    const response = await fetch('https://www.proxy-list.download/api/v1/get?type=http&port=8080');
+    const text = await response.text();
+    const lines = text.trim().split('\r\n').filter(Boolean);
+    if (lines.length === 0) return null;
+
+    const [ip, port] = lines[Math.floor(Math.random() * lines.length)].split(':');
+    return { ip, port };
+  } catch (err) {
+    console.error("Failed to fetch proxies:", err.message);
+    return null;
+  }
 }
 
 app.post('/submit', async (req, res) => {
@@ -65,14 +74,16 @@ app.post('/submit', async (req, res) => {
   let browser;
   try {
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
-
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
-    // Get a random proxy from the list
-    const proxy = getRandomProxy();
-    const proxyUrl = `http://${proxy.username}:${proxy.password}@${proxy.ip}:${proxy.port}`;
-
-    pushLog(sessionId, `✅ Using Proxy: ${proxy.ip}`);
+    // Get a random proxy
+    const proxy = await getRandomProxyOnline();
+    if (!proxy) {
+      pushLog(sessionId, "❌ Failed to retrieve proxy.");
+      return res.status(500).json({ message: "❌ Could not get a working proxy." });
+    }
+    const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
+    pushLog(sessionId, `✅ Using Proxy: ${proxy.ip}:${proxy.port}`);
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
 
@@ -86,7 +97,7 @@ app.post('/submit', async (req, res) => {
         '--disable-gpu',
         '--no-zygote',
         '--single-process',
-        `--proxy-server=${proxyUrl}`  // Set the proxy for Puppeteer
+        `--proxy-server=${proxyUrl}`
       ]
     });
 
@@ -106,20 +117,18 @@ app.post('/submit', async (req, res) => {
     pushLog(sessionId, "⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
-    // Enhanced progress tracking
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(sessionId, `Progress: ${progress}%`);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Add a delay to simulate real-time progress
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
-    // Wait until progress reaches 100% or time out
     await page.waitForFunction(() => {
       const el = document.querySelector('.progress-bar');
       return el && (el.innerText.includes("100") || el.style.width === "100%");
     }, { timeout: 60000 });
 
     pushLog(sessionId, "✅ Progress complete. Finalizing...Sending views/likes...");
-    await new Promise(resolve => setTimeout(resolve, 30000)); // Simulate finalization
+    await new Promise(resolve => setTimeout(resolve, 30000));
 
     pushLog(sessionId, "🔍 Checking result...");
     const popupStatus = await page.evaluate(() => {
