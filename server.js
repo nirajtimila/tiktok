@@ -2,7 +2,6 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 const axios = require('axios');
-const cheerio = require('cheerio');
 require('dotenv').config();
 
 const app = express();
@@ -14,26 +13,19 @@ app.use(express.json());
 
 const sessions = new Map();
 
-// Get free proxies from free-proxy-list.net
-async function fetchProxies() {
-  const res = await axios.get('https://free-proxy-list.net/');
-  const $ = cheerio.load(res.data);
-  const proxies = [];
-
-  $('#proxylisttable tbody tr').each((i, row) => {
-    const tds = $(row).find('td');
-    const ip = $(tds[0]).text();
-    const port = $(tds[1]).text();
-    const isHttps = $(tds[6]).text() === 'yes';
-
-    if (isHttps) {
-      proxies.push(`http://${ip}:${port}`);
-    }
-  });
-
-  return proxies;
+// Fetch a free HTTPS proxy
+async function getFreeProxy() {
+  try {
+    const response = await axios.get('https://www.proxy-list.download/api/v1/get?type=https');
+    const proxies = response.data.split('\r\n').filter(p => p);
+    return proxies[0] || null;
+  } catch (err) {
+    console.error("❌ Failed to fetch proxy:", err.message);
+    return null;
+  }
 }
 
+// SSE connection for log streaming
 app.get('/progress', (req, res) => {
   const sessionId = req.query.sessionId;
   if (!sessionId) return res.status(400).end();
@@ -59,6 +51,7 @@ app.get('/progress', (req, res) => {
   });
 });
 
+// Helper to push logs to session
 function pushLog(sessionId, message) {
   const fullMessage = `[${SERVER_NAME}] ${message}`;
   console.log(`[${sessionId}] ${fullMessage}`);
@@ -68,6 +61,7 @@ function pushLog(sessionId, message) {
   if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
 }
 
+// Main automation endpoint
 app.post('/submit', async (req, res) => {
   const { link, sessionId, type } = req.body;
   if (!link || !sessionId) {
@@ -75,36 +69,37 @@ app.post('/submit', async (req, res) => {
   }
 
   const targetURL = type === 'likes' ? 'https://leofame.com/free-tiktok-likes' : 'https://leofame.com/free-tiktok-views';
-
   let browser;
+
   try {
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
-    const proxies = await fetchProxies();
-    const proxy = proxies[Math.floor(Math.random() * proxies.length)];
-    pushLog(sessionId, `🌐 Using proxy: ${proxy}`);
+    const proxy = await getFreeProxy();
+    pushLog(sessionId, `🌐 Using proxy: ${proxy || 'none (direct connection)'}`);
+
+    const args = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--single-process'
+    ];
+    if (proxy) args.push(`--proxy-server=http://${proxy}`);
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
 
     browser = await puppeteer.launch({
       headless: true,
       executablePath,
-      args: [
-        `--proxy-server=${proxy}`,
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--single-process'
-      ]
+      args
     });
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    pushLog(sessionId, `🌐 Preparing boost engine...`);
+    pushLog(sessionId, "🌐 Preparing boost engine...");
     await page.goto(targetURL, { waitUntil: 'load' });
 
     pushLog(sessionId, "📝 Connecting to TikTok servers...");
@@ -132,10 +127,9 @@ app.post('/submit', async (req, res) => {
 
     pushLog(sessionId, "🔍 Checking result...");
     const popupStatus = await page.evaluate(() => {
-      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
+      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-show');
       if (!popup) return 'No Popup';
-      const icon = popup.querySelector('.swal2-icon');
-      if (icon && icon.classList.contains('swal2-icon-error')) return 'Error';
+      if (popup.classList.contains('swal2-icon-error')) return 'Error';
       if (popup.classList.contains('swal2-icon-success')) return 'Success';
       return 'Unknown';
     });
@@ -160,6 +154,7 @@ app.post('/submit', async (req, res) => {
   }
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`${SERVER_NAME} running on port ${PORT}`);
 });
