@@ -15,6 +15,7 @@ app.use(express.json());
 
 const sessions = {};
 
+// Updated proxy fetch function
 async function getProxyWithPort8080() {
   try {
     const response = await fetch('https://free-proxy-list.net/');
@@ -33,9 +34,10 @@ async function getProxyWithPort8080() {
       }
     });
 
+    console.log(`Found ${proxies.length} proxies on port 8080`);
+
     if (proxies.length === 0) throw new Error('No proxies with port 8080 found.');
 
-    // Randomize
     const selectedProxy = proxies[Math.floor(Math.random() * proxies.length)];
     console.log('Using proxy:', `${selectedProxy.ip}:${selectedProxy.port}`);
     return selectedProxy;
@@ -45,6 +47,7 @@ async function getProxyWithPort8080() {
   }
 }
 
+// Main endpoint
 app.post('/submit', async (req, res) => {
   const { link, sessionId } = req.body;
   if (!link || !sessionId) {
@@ -86,12 +89,14 @@ app.post('/submit', async (req, res) => {
   }
 });
 
+// SSE event endpoint
 app.get('/events/:sessionId', (req, res) => {
   const sessionId = req.params.sessionId;
   sessions[sessionId] = sse;
   sse.init(req, res);
 });
 
+// Server start
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
