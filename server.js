@@ -2,8 +2,13 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const http = require('http');
+const socketIo = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);  // Initialize socket.io with the HTTP server
+
 const port = process.env.PORT || 3000;
 
 app.use(cors());
@@ -54,7 +59,7 @@ app.post('/submit', async (req, res) => {
       sessions[sessionId].progress += 20; // Simulate progress
       if (sessions[sessionId].progress > 100) sessions[sessionId].progress = 100;
 
-      // Push progress update to client
+      // Push progress update to client via WebSocket (Socket.IO)
       io.emit('progress', { sessionId, progress: sessions[sessionId].progress, log: message });
 
       setTimeout(simulateStep, 1000); // Delay next step
@@ -96,6 +101,6 @@ app.get('/progress', (req, res) => {
 });
 
 // Start the server
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
