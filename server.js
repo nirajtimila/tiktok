@@ -3,6 +3,7 @@ const puppeteer = require('puppeteer');
 const cors = require('cors');
 require('dotenv').config();
 const fetch = require('node-fetch'); // Import node-fetch for ScraperAPI
+const proxies = require('./proxy');  // Import your proxy list from proxy.js
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,26 +48,10 @@ function pushLog(sessionId, message) {
   if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
 }
 
-async function getWorkingProxy(sessionId) {
-  try {
-    const apiKey = process.env.SCRAPER_API_KEY; // ScraperAPI key from .env
-    const apiUrl = `https://api.scraperapi.com/?api_key=${apiKey}&url=https://httpbin.org/ip`;
-
-    const response = await fetch(apiUrl);
-    const data = await response.json();
-    const ip = data.origin; // Get the IP from the response
-
-    if (!ip) {
-      pushLog(sessionId, `❌ Proxy returned empty IP.`);
-      return null;
-    }
-
-    pushLog(sessionId, `✅ Using ScraperAPI Proxy: ${ip}`);
-    return ip;
-  } catch (err) {
-    pushLog(sessionId, `❌ Error fetching proxy: ${err.message}`);
-    return null;
-  }
+// Function to get a random proxy from the proxy list
+function getRandomProxy() {
+  const randomIndex = Math.floor(Math.random() * proxies.length);
+  return proxies[randomIndex];
 }
 
 app.post('/submit', async (req, res) => {
@@ -83,11 +68,11 @@ app.post('/submit', async (req, res) => {
 
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
-    // Get new proxy for each request
-    const proxy = await getWorkingProxy(sessionId);
-    if (!proxy) {
-      return res.status(500).json({ message: "❌ Could not get proxy" });
-    }
+    // Get a random proxy from the list
+    const proxy = getRandomProxy();
+    const proxyUrl = `http://${proxy.username}:${proxy.password}@${proxy.ip}:${proxy.port}`;
+
+    pushLog(sessionId, `✅ Using Proxy: ${proxy.ip}`);
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
 
@@ -101,7 +86,7 @@ app.post('/submit', async (req, res) => {
         '--disable-gpu',
         '--no-zygote',
         '--single-process',
-        `--proxy-server=http://${proxy}` // Set the proxy for Puppeteer
+        `--proxy-server=${proxyUrl}`  // Set the proxy for Puppeteer
       ]
     });
 
