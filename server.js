@@ -13,39 +13,31 @@ app.use(express.json());
 
 const sessions = {};
 
-// Use Puppeteer to scrape proxies from https://free-proxy-list.net/
-async function getProxyWithPort8080() {
-  try {
-    const browser = await puppeteer.launch({ 
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'] // Added --no-sandbox flag
-    });
-    const page = await browser.newPage();
+// Fetch proxies with port 443
+async function getProxiesWithPort443() {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  const page = await browser.newPage();
+  await page.goto('https://free-proxy-list.net/', { waitUntil: 'domcontentloaded' });
 
-    await page.goto('https://free-proxy-list.net/', { waitUntil: 'networkidle2' });
+  const proxies = await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('#proxylisttable tbody tr'));
+    return rows.map(row => {
+      const cells = row.querySelectorAll('td');
+      return {
+        ip: cells[0]?.innerText.trim(),
+        port: cells[1]?.innerText.trim(),
+        isHttps: cells[6]?.innerText.trim()
+      };
+    }).filter(proxy => proxy.port === '443');
+  });
 
-    // Scrape proxies from the <textarea> containing proxy list
-    const proxiesText = await page.$eval('textarea.form-control', el => el.value);
+  await browser.close();
 
-    // Split the text by new lines, then filter proxies by port 8080
-    const proxies = proxiesText.split('\n').map(proxy => {
-      const [ip, port] = proxy.split(':');
-      return { ip: ip.trim(), port: port ? port.trim() : '' };
-    }).filter(proxy => proxy.port && proxy.port === '8080');
-
-    await browser.close();
-
-    console.log(`Found ${proxies.length} proxies on port 8080`);
-
-    if (proxies.length === 0) throw new Error('No proxies with port 8080 found.');
-
-    const selectedProxy = proxies[Math.floor(Math.random() * proxies.length)];
-    console.log('Using proxy:', `${selectedProxy.ip}:${selectedProxy.port}`);
-    return selectedProxy;
-  } catch (error) {
-    console.error('Proxy fetch error:', error.message);
-    throw error;
-  }
+  if (proxies.length === 0) throw new Error('No proxies with port 443 found.');
+  return proxies;
 }
 
 app.post('/submit', async (req, res) => {
@@ -57,35 +49,64 @@ app.post('/submit', async (req, res) => {
   sessions[sessionId] = sse;
   sse.send('Launching Puppeteer...', sessionId);
 
+  let proxies;
   try {
-    const proxy = await getProxyWithPort8080();
-    const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
-
-    const browser = await puppeteer.launch({
-      args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'], // Added --no-sandbox flag
-      headless: true
-    });
-
-    const page = await browser.newPage();
-    sse.send('Navigating to site...', sessionId);
-    await page.goto('https://leofame.com/free-tiktok-views', { timeout: 60000 });
-
-    sse.send('Filling form...', sessionId);
-    await page.type('#link', link);
-    await page.click('#submit');
-
-    sse.send('Waiting for confirmation...', sessionId);
-    await page.waitForSelector('.result', { timeout: 30000 });
-
-    const resultText = await page.$eval('.result', el => el.textContent.trim());
-    sse.send(`Done: ${resultText}`, sessionId);
-
-    await browser.close();
-    res.json({ success: true, message: resultText });
+    proxies = await getProxiesWithPort443();
   } catch (err) {
-    console.error('Error:', err.message);
-    sse.send(`Error: ${err.message}`, sessionId);
-    res.status(500).json({ error: err.message });
+    console.error('Proxy fetch error:', err.message);
+    sse.send(`Proxy fetch error: ${err.message}`, sessionId);
+    return res.status(500).json({ error: err.message });
+  }
+
+  let success = false;
+  let browser;
+  for (let attempt = 0; attempt < Math.min(5, proxies.length); attempt++) {
+    const proxy = proxies[Math.floor(Math.random() * proxies.length)];
+    const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
+    console.log(`Attempt ${attempt + 1}: Trying proxy ${proxyUrl}`);
+    sse.send(`Using proxy: ${proxyUrl}`, sessionId);
+
+    try {
+      browser = await puppeteer.launch({
+        args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'],
+        headless: true,
+        timeout: 60000
+      });
+
+      const page = await browser.newPage();
+
+      sse.send('Navigating to site...', sessionId);
+      await page.goto('https://leofame.com/free-tiktok-views', {
+        timeout: 90000,
+        waitUntil: 'domcontentloaded'
+      });
+
+      const linkInput = await page.$('#link');
+      if (!linkInput) throw new Error('Link input not found. Proxy may be blocked.');
+
+      sse.send('Filling form...', sessionId);
+      await page.type('#link', link);
+      await page.click('#submit');
+
+      sse.send('Waiting for confirmation...', sessionId);
+      await page.waitForSelector('.result', { timeout: 30000 });
+
+      const resultText = await page.$eval('.result', el => el.textContent.trim());
+      sse.send(`Done: ${resultText}`, sessionId);
+
+      await browser.close();
+      success = true;
+      return res.json({ success: true, message: resultText });
+    } catch (err) {
+      console.error(`Attempt ${attempt + 1} failed:`, err.message);
+      sse.send(`Attempt ${attempt + 1} failed: ${err.message}`, sessionId);
+      if (browser) await browser.close();
+    }
+  }
+
+  if (!success) {
+    sse.send(`All proxy attempts failed.`, sessionId);
+    return res.status(500).json({ error: 'All proxy attempts failed' });
   }
 });
 
