@@ -1,7 +1,6 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
-const proxies = require('./proxies'); // Importing the proxies list
 require('dotenv').config(); // For local .env files
 
 const app = express();
@@ -55,20 +54,12 @@ app.post('/submit', async (req, res) => {
 
   let browser;
   try {
-    // Initialize or reset session logs if necessary
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
 
     pushLog(sessionId, "🚀 Let it begin...");
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-    // Log the path being used for Puppeteer
-    pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
-
-    // Randomly select a proxy from the proxies list
-    const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
-    const HTTP_PROXY = `http://${randomProxy.username}:${randomProxy.password}@${randomProxy.ip}:${randomProxy.port}`;
-
-    pushLog(sessionId, `Using proxy: ${HTTP_PROXY}`);
+    //pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
     browser = await puppeteer.launch({
       headless: true,
@@ -79,8 +70,7 @@ app.post('/submit', async (req, res) => {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-zygote',
-        '--single-process',
-        `--proxy-server=${HTTP_PROXY}` // Adding HTTP proxy configuration
+        '--single-process'
       ]
     });
 
