@@ -1,8 +1,8 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
-const axios = require('axios');
 const cors = require('cors');
 require('dotenv').config();
+const fetch = require('node-fetch'); // Import node-fetch for ScraperAPI
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,58 +13,6 @@ app.use(express.json());
 
 const sessions = new Map();
 
-// Log helper function to push logs to the frontend
-function pushLog(sessionId, message) {
-  const fullMessage = `[${SERVER_NAME}] ${message}`;
-  console.log(`[${sessionId}] ${fullMessage}`);
-  const session = sessions.get(sessionId);
-  if (!session) return;
-  session.logs.push(fullMessage);
-  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
-}
-
-// Proxy testing function that checks if a proxy is working
-async function getWorkingProxyWithTest(sessionId) {
-  try {
-    const res = await axios.get('https://www.proxy-list.download/api/v1/get?type=https');
-    const proxies = res.data.split('\r\n').filter(Boolean);
-
-    for (const proxy of proxies) {
-      const [host, port] = proxy.split(':');
-
-      try {
-        const browser = await puppeteer.launch({
-          headless: true,
-          args: [
-            `--proxy-server=${proxy}`,
-            '--no-sandbox',
-            '--disable-setuid-sandbox'
-          ]
-        });
-
-        const page = await browser.newPage();
-        await page.goto('https://api.ipify.org?format=json', { timeout: 10000 });
-
-        const ipData = await page.evaluate(() => JSON.parse(document.body.innerText));
-        await browser.close();
-
-        console.log(`✅ Working proxy: ${proxy} | IP: ${ipData.ip}`);
-        pushLog(sessionId, `📡 Using Proxy: ${proxy} → IP: ${ipData.ip}`);
-        return proxy;
-
-      } catch (err) {
-        console.log(`❌ Proxy failed: ${proxy}`);
-      }
-    }
-
-    return null;
-  } catch (err) {
-    console.error("❌ Error fetching proxies:", err.message);
-    return null;
-  }
-}
-
-// Progress streaming route
 app.get('/progress', (req, res) => {
   const sessionId = req.query.sessionId;
   if (!sessionId) return res.status(400).end();
@@ -90,7 +38,32 @@ app.get('/progress', (req, res) => {
   });
 });
 
-// Submit request to start automation
+function pushLog(sessionId, message) {
+  const fullMessage = `[${SERVER_NAME}] ${message}`;
+  console.log(`[${sessionId}] ${fullMessage}`);
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  session.logs.push(fullMessage);
+  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
+}
+
+async function getWorkingProxy(sessionId) {
+  try {
+    const apiKey = process.env.1ce9498ff201971e17300943e647cf16; // ScraperAPI key from .env
+    const apiUrl = `https://api.scraperapi.com/?api_key=${apiKey}&url=https://httpbin.org/ip`;
+
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+    const ip = data.origin; // Get the IP from the response
+
+    pushLog(sessionId, `✅ Using ScraperAPI Proxy: ${ip}`);
+    return ip;
+  } catch (err) {
+    pushLog(sessionId, `❌ Error fetching proxy: ${err.message}`);
+    return null;
+  }
+}
+
 app.post('/submit', async (req, res) => {
   const { link, sessionId, type } = req.body;
   if (!link || !sessionId) {
@@ -105,11 +78,10 @@ app.post('/submit', async (req, res) => {
 
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
-    // Get a working proxy before launching Puppeteer
-    const proxy = await getWorkingProxyWithTest(sessionId);
+    // Get new proxy for each request
+    const proxy = await getWorkingProxy(sessionId);
     if (!proxy) {
-      pushLog(sessionId, '❌ No working proxy found.');
-      return res.status(500).json({ message: "❌ Error: No working proxy found." });
+      return res.status(500).json({ message: "❌ Could not get proxy" });
     }
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
@@ -118,13 +90,13 @@ app.post('/submit', async (req, res) => {
       headless: true,
       executablePath,
       args: [
-        `--proxy-server=${proxy}`,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-zygote',
-        '--single-process'
+        '--single-process',
+        `--proxy-server=http://${proxy}` // Set the proxy for Puppeteer
       ]
     });
 
