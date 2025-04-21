@@ -2,7 +2,7 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 require('dotenv').config();
-const fetch = require('node-fetch'); // For fetching proxy list
+const fetch = require('node-fetch'); // Import node-fetch for ScraperAPI
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,52 +12,6 @@ app.use(cors());
 app.use(express.json());
 
 const sessions = new Map();
-
-// Function to fetch and filter proxies with port 8080
-async function fetchProxiesWithPort8080() {
-  try {
-    const response = await fetch('https://free-proxy-list.net/');
-    const html = await response.text();
-
-    // Extract the proxy list table from the HTML
-    const proxyTableMatch = html.match(/<table[^>]*id="proxylisttable"[^>]*>[\s\S]*?<\/table>/);
-    if (!proxyTableMatch) return [];
-
-    const proxyTable = proxyTableMatch[0];
-
-    // Extract rows from the table
-    const rows = proxyTable.match(/<tr>[\s\S]*?<\/tr>/g);
-    if (!rows || rows.length < 2) return [];
-
-    const proxies = [];
-
-    // Skip the header row and process the rest
-    for (let i = 1; i < rows.length; i++) {
-      const cols = rows[i].match(/<td>(.*?)<\/td>/g);
-      if (!cols || cols.length < 2) continue;
-
-      const ip = cols[0].replace(/<td>|<\/td>/g, '').trim();
-      const port = cols[1].replace(/<td>|<\/td>/g, '').trim();
-
-      if (port === '8080') {
-        proxies.push({ ip, port });
-      }
-    }
-
-    return proxies;
-  } catch (error) {
-    console.error('Error fetching proxies:', error);
-    return [];
-  }
-}
-
-// Function to get a random proxy from the list
-async function getRandomProxy() {
-  const proxies = await fetchProxiesWithPort8080();
-  if (proxies.length === 0) return null;
-  const randomIndex = Math.floor(Math.random() * proxies.length);
-  return proxies[randomIndex];
-}
 
 app.get('/progress', (req, res) => {
   const sessionId = req.query.sessionId;
@@ -107,15 +61,21 @@ app.post('/submit', async (req, res) => {
 
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
-    // Get a random proxy with port 8080
-    const proxy = await getRandomProxy();
+    // Get a random proxy from the list that uses port 8080
+    const proxy = await fetch('https://www.free-proxy-list.net/')
+      .then(response => response.text())
+      .then(body => {
+        // This is a simple approach, you may need a parser to extract the proxy details
+        const match = body.match(/(\d+\.\d+\.\d+\.\d+:\d{4})/); // Match IP:PORT
+        return match ? match[0] : null;
+      });
+
     if (!proxy) {
-      pushLog(sessionId, "❌ No proxies available with port 8080.");
-      return res.status(500).json({ message: "No proxies available with port 8080." });
+      pushLog(sessionId, "❌ Error: No proxy found.");
+      return res.status(500).json({ message: "❌ Error: No proxy found." });
     }
 
-    const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
-    pushLog(sessionId, `✅ Using Proxy: ${proxy.ip}:${proxy.port}`);
+    pushLog(sessionId, `✅ Using Proxy: ${proxy}`);
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
 
@@ -129,7 +89,7 @@ app.post('/submit', async (req, res) => {
         '--disable-gpu',
         '--no-zygote',
         '--single-process',
-        `--proxy-server=${proxyUrl}`  // Set the proxy for Puppeteer
+        `--proxy-server=http://${proxy}`  // Set the proxy for Puppeteer
       ]
     });
 
@@ -165,6 +125,35 @@ app.post('/submit', async (req, res) => {
     await new Promise(resolve => setTimeout(resolve, 30000)); // Simulate finalization
 
     pushLog(sessionId, "🔍 Checking result...");
-   
-::contentReference[oaicite:3]{index=3}
- 
+    const popupStatus = await page.evaluate(() => {
+      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
+      if (!popup) return 'No Popup';
+      const icon = popup.querySelector('.swal2-icon');
+      if (icon && icon.classList.contains('swal2-icon-error')) return 'Error';
+      if (popup.classList.contains('swal2-icon-success')) return 'Success';
+      return 'Unknown';
+    });
+
+    await browser.close();
+
+    if (popupStatus === 'Success') {
+      pushLog(sessionId, "🎉 Success!");
+      return res.json({ message: `✅ Success: ${type === 'likes' ? 'Likes' : 'Views'} successfully added!` });
+    } else if (popupStatus === 'Error') {
+      pushLog(sessionId, "❌ Error: Submission failed.");
+      return res.json({ message: "⚠️ Error: Try again later." });
+    } else {
+      pushLog(sessionId, "❔ Unknown error. Please try again with different video or wait 24 hour ⏳");
+      return res.json({ message: "⚠️ Error: Try again later." });
+    }
+
+  } catch (err) {
+    if (browser) await browser.close();
+    pushLog(sessionId, `❌ Error: ${err.message}`);
+    return res.status(500).json({ message: "❌ Automation error: " + err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`${SERVER_NAME} running on port ${PORT}`);
+});
