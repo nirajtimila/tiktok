@@ -1,159 +1,96 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
 const cors = require('cors');
-require('dotenv').config();
-const fetch = require('node-fetch'); // Import node-fetch for ScraperAPI
+const fetch = require('node-fetch');
+const cheerio = require('cheerio');
+const { v4: uuidv4 } = require('uuid');
+const puppeteer = require('puppeteer');
+const SSE = require('express-sse');
 
 const app = express();
+const sse = new SSE();
 const PORT = process.env.PORT || 3000;
-const SERVER_NAME = process.env.SERVER_NAME || "Default Server";
 
 app.use(cors());
 app.use(express.json());
 
-const sessions = new Map();
+const sessions = {};
 
-app.get('/progress', (req, res) => {
-  const sessionId = req.query.sessionId;
-  if (!sessionId) return res.status(400).end();
+async function getProxyWithPort8080() {
+  try {
+    const response = await fetch('https://free-proxy-list.net/');
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    const proxies = [];
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
+    $('#proxylisttable tbody tr').each((index, element) => {
+      const tds = $(element).find('td');
+      const ip = $(tds[0]).text();
+      const port = $(tds[1]).text();
+      const isHttps = $(tds[6]).text();
 
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, { res, logs: [] });
-  } else {
-    const session = sessions.get(sessionId);
-    session.res = res;
-    session.logs.forEach(log => res.write(`data: ${log}\n\n`));
+      if (port === '8080') {
+        proxies.push({ ip, port, isHttps });
+      }
+    });
+
+    if (proxies.length === 0) throw new Error('No proxies with port 8080 found.');
+
+    const selectedProxy = proxies[Math.floor(Math.random() * proxies.length)];
+    console.log('Using proxy:', `${selectedProxy.ip}:${selectedProxy.port}`);
+    return selectedProxy;
+  } catch (error) {
+    console.error('Proxy fetch error:', error.message);
+    throw error;
   }
-
-  req.on('close', () => {
-    const session = sessions.get(sessionId);
-    if (session && session.res === res) {
-      sessions.delete(sessionId);
-    }
-  });
-});
-
-function pushLog(sessionId, message) {
-  const fullMessage = `[${SERVER_NAME}] ${message}`;
-  console.log(`[${sessionId}] ${fullMessage}`);
-  const session = sessions.get(sessionId);
-  if (!session) return;
-  session.logs.push(fullMessage);
-  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
 }
 
 app.post('/submit', async (req, res) => {
-  const { link, sessionId, type } = req.body;
+  const { link, sessionId } = req.body;
   if (!link || !sessionId) {
-    return res.status(400).json({ message: "TikTok link and sessionId are required" });
+    return res.status(400).json({ error: 'Missing link or sessionId' });
   }
 
-  const targetURL = type === 'likes' ? 'https://leofame.com/free-tiktok-likes' : 'https://leofame.com/free-tiktok-views';
+  sessions[sessionId] = sse;
+  sse.send('Launching Puppeteer...', sessionId);
 
-  let browser;
   try {
-    sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
+    const proxy = await getProxyWithPort8080();
+    const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
 
-    pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
-
-    // Get a random proxy from the list that uses port 8080
-    const proxy = await fetch('https://www.free-proxy-list.net/')
-      .then(response => response.text())
-      .then(body => {
-        // This is a simple approach, you may need a parser to extract the proxy details
-        const match = body.match(/(\d+\.\d+\.\d+\.\d+:\d{4})/); // Match IP:PORT
-        return match ? match[0] : null;
-      });
-
-    if (!proxy) {
-      pushLog(sessionId, "❌ Error: No proxy found.");
-      return res.status(500).json({ message: "❌ Error: No proxy found." });
-    }
-
-    pushLog(sessionId, `✅ Using Proxy: ${proxy}`);
-
-    const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-
-    browser = await puppeteer.launch({
-      headless: true,
-      executablePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--single-process',
-        `--proxy-server=http://${proxy}`  // Set the proxy for Puppeteer
-      ]
+    const browser = await puppeteer.launch({
+      args: [`--proxy-server=${proxyUrl}`],
+      headless: true
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
+    sse.send('Navigating to site...', sessionId);
+    await page.goto('https://leofame.com/free-tiktok-views', { timeout: 60000 });
 
-    pushLog(sessionId, `🌐 Preparing boost engine...`);
-    await page.goto(targetURL, { waitUntil: 'load' });
+    sse.send('Filling form...', sessionId);
+    await page.type('#link', link);
+    await page.click('#submit');
 
-    pushLog(sessionId, "📝 Connecting to TikTok servers...");
-    await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
-    await page.type('input[name="free_link"]', link);
+    sse.send('Waiting for confirmation...', sessionId);
+    await page.waitForSelector('.result', { timeout: 30000 });
 
-    pushLog(sessionId, "🚀 Verifying your link...");
-    await page.click('button[type="submit"]');
-
-    pushLog(sessionId, "⏳ Waiting for progress...");
-    await page.waitForSelector('.progress-bar', { timeout: 60000 });
-
-    // Enhanced progress tracking
-    for (let progress = 0; progress <= 100; progress += 2) {
-      pushLog(sessionId, `Progress: ${progress}%`);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Add a delay to simulate real-time progress
-    }
-
-    // Wait until progress reaches 100% or time out
-    await page.waitForFunction(() => {
-      const el = document.querySelector('.progress-bar');
-      return el && (el.innerText.includes("100") || el.style.width === "100%");
-    }, { timeout: 60000 });
-
-    pushLog(sessionId, "✅ Progress complete. Finalizing...Sending views/likes...");
-    await new Promise(resolve => setTimeout(resolve, 30000)); // Simulate finalization
-
-    pushLog(sessionId, "🔍 Checking result...");
-    const popupStatus = await page.evaluate(() => {
-      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
-      if (!popup) return 'No Popup';
-      const icon = popup.querySelector('.swal2-icon');
-      if (icon && icon.classList.contains('swal2-icon-error')) return 'Error';
-      if (popup.classList.contains('swal2-icon-success')) return 'Success';
-      return 'Unknown';
-    });
+    const resultText = await page.$eval('.result', el => el.textContent.trim());
+    sse.send(`Done: ${resultText}`, sessionId);
 
     await browser.close();
-
-    if (popupStatus === 'Success') {
-      pushLog(sessionId, "🎉 Success!");
-      return res.json({ message: `✅ Success: ${type === 'likes' ? 'Likes' : 'Views'} successfully added!` });
-    } else if (popupStatus === 'Error') {
-      pushLog(sessionId, "❌ Error: Submission failed.");
-      return res.json({ message: "⚠️ Error: Try again later." });
-    } else {
-      pushLog(sessionId, "❔ Unknown error. Please try again with different video or wait 24 hour ⏳");
-      return res.json({ message: "⚠️ Error: Try again later." });
-    }
-
+    res.json({ success: true, message: resultText });
   } catch (err) {
-    if (browser) await browser.close();
-    pushLog(sessionId, `❌ Error: ${err.message}`);
-    return res.status(500).json({ message: "❌ Automation error: " + err.message });
+    console.error('Error:', err.message);
+    sse.send(`Error: ${err.message}`, sessionId);
+    res.status(500).json({ error: err.message });
   }
 });
 
+app.get('/events/:sessionId', (req, res) => {
+  const sessionId = req.params.sessionId;
+  sessions[sessionId] = sse;
+  sse.init(req, res);
+});
+
 app.listen(PORT, () => {
-  console.log(`${SERVER_NAME} running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
