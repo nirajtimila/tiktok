@@ -3,7 +3,7 @@ const puppeteer = require('puppeteer');
 const cors = require('cors');
 require('dotenv').config();
 const fetch = require('node-fetch'); // Import node-fetch for ScraperAPI
-const proxies = require('./proxy');  // Import your proxy list from proxy.js
+const proxies = require('./proxies');  // Import your proxy list from proxy.js
 
 const app = express();
 const PORT = process.env.PORT || 3000;
