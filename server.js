@@ -24,17 +24,14 @@ async function getProxyWithPort8080() {
 
     await page.goto('https://free-proxy-list.net/', { waitUntil: 'networkidle2' });
 
-    const proxies = await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('#proxylisttable tbody tr'));
-      return rows.map(row => {
-        const cells = row.querySelectorAll('td');
-        return {
-          ip: cells[0]?.innerText.trim(),
-          port: cells[1]?.innerText.trim(),
-          isHttps: cells[6]?.innerText.trim()
-        };
-      }).filter(proxy => proxy.port === '8080');
-    });
+    // Scrape proxies from the <textarea> containing proxy list
+    const proxiesText = await page.$eval('textarea.form-control', el => el.value);
+
+    // Split the text by new lines, then filter proxies by port 8080
+    const proxies = proxiesText.split('\n').map(proxy => {
+      const [ip, port] = proxy.split(':');
+      return { ip: ip.trim(), port: port ? port.trim() : '' };
+    }).filter(proxy => proxy.port && proxy.port === '8080');
 
     await browser.close();
 
