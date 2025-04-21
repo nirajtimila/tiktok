@@ -16,7 +16,10 @@ const sessions = {};
 // Use Puppeteer to scrape proxies from https://free-proxy-list.net/
 async function getProxyWithPort8080() {
   try {
-    const browser = await puppeteer.launch({ headless: true });
+    const browser = await puppeteer.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] // Added --no-sandbox flag
+    });
     const page = await browser.newPage();
 
     await page.goto('https://free-proxy-list.net/', { waitUntil: 'networkidle2' });
@@ -62,7 +65,7 @@ app.post('/submit', async (req, res) => {
     const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
 
     const browser = await puppeteer.launch({
-      args: [`--proxy-server=${proxyUrl}`],
+      args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'], // Added --no-sandbox flag
       headless: true
     });
 
