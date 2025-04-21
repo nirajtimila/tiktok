@@ -1,6 +1,8 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
+const axios = require('axios');
+const cheerio = require('cheerio');
 require('dotenv').config();
 
 const app = express();
@@ -11,6 +13,26 @@ app.use(cors());
 app.use(express.json());
 
 const sessions = new Map();
+
+// Get free proxies from free-proxy-list.net
+async function fetchProxies() {
+  const res = await axios.get('https://free-proxy-list.net/');
+  const $ = cheerio.load(res.data);
+  const proxies = [];
+
+  $('#proxylisttable tbody tr').each((i, row) => {
+    const tds = $(row).find('td');
+    const ip = $(tds[0]).text();
+    const port = $(tds[1]).text();
+    const isHttps = $(tds[6]).text() === 'yes';
+
+    if (isHttps) {
+      proxies.push(`http://${ip}:${port}`);
+    }
+  });
+
+  return proxies;
+}
 
 app.get('/progress', (req, res) => {
   const sessionId = req.query.sessionId;
@@ -57,8 +79,11 @@ app.post('/submit', async (req, res) => {
   let browser;
   try {
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
-
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
+
+    const proxies = await fetchProxies();
+    const proxy = proxies[Math.floor(Math.random() * proxies.length)];
+    pushLog(sessionId, `🌐 Using proxy: ${proxy}`);
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
 
@@ -66,6 +91,7 @@ app.post('/submit', async (req, res) => {
       headless: true,
       executablePath,
       args: [
+        `--proxy-server=${proxy}`,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
