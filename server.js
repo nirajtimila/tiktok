@@ -1,7 +1,7 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
-const cors = require('cors');
 const axios = require('axios');
+const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
@@ -13,19 +13,58 @@ app.use(express.json());
 
 const sessions = new Map();
 
-// Fetch a free HTTPS proxy
-async function getFreeProxy() {
+// Log helper function to push logs to the frontend
+function pushLog(sessionId, message) {
+  const fullMessage = `[${SERVER_NAME}] ${message}`;
+  console.log(`[${sessionId}] ${fullMessage}`);
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  session.logs.push(fullMessage);
+  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
+}
+
+// Proxy testing function that checks if a proxy is working
+async function getWorkingProxyWithTest(sessionId) {
   try {
-    const response = await axios.get('https://www.proxy-list.download/api/v1/get?type=https');
-    const proxies = response.data.split('\r\n').filter(p => p);
-    return proxies[0] || null;
+    const res = await axios.get('https://www.proxy-list.download/api/v1/get?type=https');
+    const proxies = res.data.split('\r\n').filter(Boolean);
+
+    for (const proxy of proxies) {
+      const [host, port] = proxy.split(':');
+
+      try {
+        const browser = await puppeteer.launch({
+          headless: true,
+          args: [
+            `--proxy-server=${proxy}`,
+            '--no-sandbox',
+            '--disable-setuid-sandbox'
+          ]
+        });
+
+        const page = await browser.newPage();
+        await page.goto('https://api.ipify.org?format=json', { timeout: 10000 });
+
+        const ipData = await page.evaluate(() => JSON.parse(document.body.innerText));
+        await browser.close();
+
+        console.log(`✅ Working proxy: ${proxy} | IP: ${ipData.ip}`);
+        pushLog(sessionId, `📡 Using Proxy: ${proxy} → IP: ${ipData.ip}`);
+        return proxy;
+
+      } catch (err) {
+        console.log(`❌ Proxy failed: ${proxy}`);
+      }
+    }
+
+    return null;
   } catch (err) {
-    console.error("❌ Failed to fetch proxy:", err.message);
+    console.error("❌ Error fetching proxies:", err.message);
     return null;
   }
 }
 
-// SSE connection for log streaming
+// Progress streaming route
 app.get('/progress', (req, res) => {
   const sessionId = req.query.sessionId;
   if (!sessionId) return res.status(400).end();
@@ -51,17 +90,7 @@ app.get('/progress', (req, res) => {
   });
 });
 
-// Helper to push logs to session
-function pushLog(sessionId, message) {
-  const fullMessage = `[${SERVER_NAME}] ${message}`;
-  console.log(`[${sessionId}] ${fullMessage}`);
-  const session = sessions.get(sessionId);
-  if (!session) return;
-  session.logs.push(fullMessage);
-  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
-}
-
-// Main automation endpoint
+// Submit request to start automation
 app.post('/submit', async (req, res) => {
   const { link, sessionId, type } = req.body;
   if (!link || !sessionId) {
@@ -69,37 +98,40 @@ app.post('/submit', async (req, res) => {
   }
 
   const targetURL = type === 'likes' ? 'https://leofame.com/free-tiktok-likes' : 'https://leofame.com/free-tiktok-views';
-  let browser;
 
+  let browser;
   try {
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
+
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
-    const proxy = await getFreeProxy();
-    pushLog(sessionId, `🌐 Using proxy: ${proxy || 'none (direct connection)'}`);
-
-    const args = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
-      '--single-process'
-    ];
-    if (proxy) args.push(`--proxy-server=http://${proxy}`);
+    // Get a working proxy before launching Puppeteer
+    const proxy = await getWorkingProxyWithTest(sessionId);
+    if (!proxy) {
+      pushLog(sessionId, '❌ No working proxy found.');
+      return res.status(500).json({ message: "❌ Error: No working proxy found." });
+    }
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
 
     browser = await puppeteer.launch({
       headless: true,
       executablePath,
-      args
+      args: [
+        `--proxy-server=${proxy}`,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process'
+      ]
     });
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    pushLog(sessionId, "🌐 Preparing boost engine...");
+    pushLog(sessionId, `🌐 Preparing boost engine...`);
     await page.goto(targetURL, { waitUntil: 'load' });
 
     pushLog(sessionId, "📝 Connecting to TikTok servers...");
@@ -127,9 +159,10 @@ app.post('/submit', async (req, res) => {
 
     pushLog(sessionId, "🔍 Checking result...");
     const popupStatus = await page.evaluate(() => {
-      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-show');
+      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
       if (!popup) return 'No Popup';
-      if (popup.classList.contains('swal2-icon-error')) return 'Error';
+      const icon = popup.querySelector('.swal2-icon');
+      if (icon && icon.classList.contains('swal2-icon-error')) return 'Error';
       if (popup.classList.contains('swal2-icon-success')) return 'Success';
       return 'Unknown';
     });
@@ -154,7 +187,6 @@ app.post('/submit', async (req, res) => {
   }
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`${SERVER_NAME} running on port ${PORT}`);
 });
