@@ -1,17 +1,12 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
+const { SocksProxyAgent } = require('socks-proxy-agent'); // Import SOCKS Proxy Agent
 require('dotenv').config(); // For local .env files
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SERVER_NAME = process.env.SERVER_NAME || "Default Server";
-
-// Get proxy details from environment variables
-const PROXY_IP = process.env.PROXY_IP || 'your.proxy.ip';
-const PROXY_PORT = process.env.PROXY_PORT || '80'; // replace with actual proxy port
-const PROXY_USERNAME = process.env.PROXY_USERNAME || 'your_proxy_username';
-const PROXY_PASSWORD = process.env.PROXY_PASSWORD || 'your_proxy_password';
 
 app.use(cors());
 app.use(express.json());
@@ -53,7 +48,7 @@ function pushLog(sessionId, message) {
 }
 
 app.post('/submit', async (req, res) => {
-  const { link, sessionId } = req.body;
+  const { link, sessionId, proxy } = req.body; // Proxy passed as part of the request
   if (!link || !sessionId) {
     return res.status(400).json({ message: "TikTok link and sessionId are required" });
   }
@@ -65,8 +60,12 @@ app.post('/submit', async (req, res) => {
     pushLog(sessionId, "🚀 Let it begin...");
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
+    //pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
-    // Set up Puppeteer with the proxy
+    // Set up SOCKS5 Proxy
+    const proxyUrl = `socks5://${proxy.ip}:${proxy.port}`;
+    const agent = new SocksProxyAgent(proxyUrl); // Create a SOCKS5 agent
+
     browser = await puppeteer.launch({
       headless: true,
       executablePath,
@@ -77,17 +76,20 @@ app.post('/submit', async (req, res) => {
         '--disable-gpu',
         '--no-zygote',
         '--single-process',
-        `--proxy-server=http://${PROXY_IP}:${PROXY_PORT}`
-      ]
+        `--proxy-server=${proxyUrl}` // Set the proxy here
+      ],
+      ignoreHTTPSErrors: true,
+      // pass the agent to the page to use the proxy
+      defaultViewport: { width: 1280, height: 800 },
+      userDataDir: './puppeteer_data',
+      pipe: true
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
-
-    // Proxy authentication if required
-    if (PROXY_USERNAME && PROXY_PASSWORD) {
-      await page.authenticate({ username: PROXY_USERNAME, password: PROXY_PASSWORD });
-    }
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      request.continue();
+    });
 
     pushLog(sessionId, "🌐 Navigating to site...");
     await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
