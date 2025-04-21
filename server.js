@@ -1,153 +1,101 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
-require('dotenv').config(); // For local .env files
-const SocksProxyAgent = require('socks-proxy-agent');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const SERVER_NAME = process.env.SERVER_NAME || "Default Server";
+const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-const sessions = new Map(); // key: sessionId, value: { res, logs[] }
+// Store sessions with their progress and logs
+const sessions = {};
 
+// Progress simulation messages
+const loadingMessages = [
+  "✅ Step 1: Preparing boost engine...",
+  "✅ Step 2: Connecting to TikTok servers...",
+  "✅ Step 3: Verifying your link...",
+  "✅ Step 4: Sending your request...",
+  "✅ Step 5: Finalizing everything..."
+];
+
+// Handle the /submit POST request
+app.post('/submit', async (req, res) => {
+  const { link, sessionId, type } = req.body;
+
+  if (!link || !sessionId || !type) {
+    return res.status(400).json({ message: "Missing required fields." });
+  }
+
+  // Initialize session data if it doesn't exist
+  if (!sessions[sessionId]) {
+    sessions[sessionId] = {
+      logs: [],
+      progress: 0,
+      completed: false
+    };
+  }
+
+  // Clear previous logs and progress for new request
+  sessions[sessionId].logs = [];
+  sessions[sessionId].progress = 0;
+  sessions[sessionId].completed = false;
+
+  // Simulate the process and log each step
+  let stepIndex = 0;
+
+  const simulateStep = async () => {
+    if (stepIndex < loadingMessages.length) {
+      const message = loadingMessages[stepIndex];
+      sessions[sessionId].logs.push(message);
+      stepIndex++;
+      sessions[sessionId].progress += 20; // Simulate progress
+      if (sessions[sessionId].progress > 100) sessions[sessionId].progress = 100;
+
+      // Push progress update to client
+      io.emit('progress', { sessionId, progress: sessions[sessionId].progress, log: message });
+
+      setTimeout(simulateStep, 1000); // Delay next step
+    } else {
+      // When steps are done, mark the session as complete
+      sessions[sessionId].completed = true;
+      sessions[sessionId].logs.push("Boost completed successfully!");
+      io.emit('progress', { sessionId, progress: 100, log: "Boost completed successfully!" });
+      res.json({ message: "Boost request completed!" });
+    }
+  };
+
+  simulateStep();
+});
+
+// Handle the /progress EventSource request
 app.get('/progress', (req, res) => {
-  const sessionId = req.query.sessionId;
-  if (!sessionId) return res.status(400).end();
+  const { sessionId } = req.query;
+
+  if (!sessionId || !sessions[sessionId]) {
+    return res.status(404).send('Session not found');
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, { res, logs: [] });
-  } else {
-    const session = sessions.get(sessionId);
-    session.res = res;
-    session.logs.forEach(log => res.write(`data: ${log}\n\n`));
-  }
+  // Send the initial state
+  res.write(`data: ${JSON.stringify({ sessionId, progress: sessions[sessionId].progress, log: sessions[sessionId].logs.join("\n") })}\n\n`);
 
-  req.on('close', () => {
-    const session = sessions.get(sessionId);
-    if (session && session.res === res) {
-      sessions.delete(sessionId);
+  // Push progress updates
+  const intervalId = setInterval(() => {
+    if (sessions[sessionId].completed) {
+      clearInterval(intervalId);
     }
-  });
+    res.write(`data: ${JSON.stringify({ sessionId, progress: sessions[sessionId].progress, log: sessions[sessionId].logs.join("\n") })}\n\n`);
+  }, 1000);
 });
 
-function pushLog(sessionId, message) {
-  const fullMessage = `[${SERVER_NAME}] ${message}`;
-  console.log(`[${sessionId}] ${fullMessage}`);
-  const session = sessions.get(sessionId);
-  if (!session) return;
-  session.logs.push(fullMessage);
-  if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
-}
-
-app.post('/submit', async (req, res) => {
-  const { link, sessionId, proxy } = req.body;
-
-  // Validate the incoming request
-  if (!link || !sessionId || !proxy || !proxy.ip || !proxy.port) {
-    return res.status(400).json({ message: "TikTok link, sessionId, and valid proxy (ip & port) are required" });
-  }
-
-  let browser;
-  try {
-    // Set up a new session if it doesn't already exist
-    sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
-
-    pushLog(sessionId, "🚀 Let it begin...");
-
-    const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
-
-    // Set up SOCKS5 Proxy
-    const proxyUrl = `socks5://${proxy.ip}:${proxy.port}`;
-    const agent = new SocksProxyAgent(proxyUrl); // Create a SOCKS5 agent
-
-    browser = await puppeteer.launch({
-      headless: true,
-      executablePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--single-process',
-        `--proxy-server=${proxyUrl}` // Set the proxy here
-      ],
-      ignoreHTTPSErrors: true,
-      defaultViewport: { width: 1280, height: 800 },
-      userDataDir: './puppeteer_data',
-      pipe: true
-    });
-
-    const page = await browser.newPage();
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
-      request.continue();
-    });
-
-    pushLog(sessionId, "🌐 Navigating to site...");
-    await page.goto('https://leofame.com/free-tiktok-views', { waitUntil: 'load' });
-
-    pushLog(sessionId, "📝 Typing TikTok link...");
-    await page.waitForSelector('input[name="free_link"]', { timeout: 10000 });
-    await page.type('input[name="free_link"]', link);
-
-    pushLog(sessionId, "🚀 Submitting...");
-    await page.click('button[type="submit"]');
-
-    pushLog(sessionId, "⏳ Waiting for progress...");
-    await page.waitForSelector('.progress-bar', { timeout: 60000 });
-
-    for (let progress = 0; progress <= 100; progress += 2) {
-      pushLog(sessionId, `Progress: ${progress}%`);
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    await page.waitForFunction(() => {
-      const el = document.querySelector('.progress-bar');
-      return el && (el.innerText.includes("100") || el.style.width === "100%");
-    }, { timeout: 60000 });
-
-    pushLog(sessionId, "✅ Progress complete. Finalizing...");
-    await new Promise(resolve => setTimeout(resolve, 30000));
-
-    pushLog(sessionId, "🔍 Checking result...");
-    const popupStatus = await page.evaluate(() => {
-      const popup = document.querySelector('.swal2-popup.swal2-modal.swal2-icon-success.swal2-show');
-      if (!popup) return 'No Popup';
-      const icon = popup.querySelector('.swal2-icon');
-      if (icon && icon.classList.contains('swal2-icon-error')) return 'Error';
-      if (popup.classList.contains('swal2-icon-success')) return 'Success';
-      return 'Unknown';
-    });
-
-    await browser.close();
-
-    if (popupStatus === 'Success') {
-      pushLog(sessionId, "🎉 Success: Views added!");
-      return res.json({ message: "✅ Success: Views successfully added!" });
-    } else if (popupStatus === 'Error') {
-      pushLog(sessionId, "❌ Error: Submission failed.");
-      return res.json({ message: "⚠️ Error: Try again later." });
-    } else {
-      pushLog(sessionId, "❔ Unknown popup status.");
-      return res.json({ message: "⚠️ Error: Try again later." });
-    }
-
-  } catch (err) {
-    if (browser) await browser.close();
-    pushLog(sessionId, `❌ Error: ${err.message}`);
-    return res.status(500).json({ message: "❌ Automation error: " + err.message });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`${SERVER_NAME} running on port ${PORT}`);
+// Start the server
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
