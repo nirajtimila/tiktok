@@ -18,23 +18,20 @@ async function getProxyWithPort3128() {
   try {
     const browser = await puppeteer.launch({ 
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] // Added --no-sandbox flag
     });
     const page = await browser.newPage();
 
-    await page.goto('https://free-proxy-list.net/', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://free-proxy-list.net/', { waitUntil: 'networkidle2' });
 
-    const proxies = await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('#proxylisttable tbody tr'));
-      return rows.map(row => {
-        const cells = row.querySelectorAll('td');
-        return {
-          ip: cells[0]?.innerText.trim(),
-          port: cells[1]?.innerText.trim(),
-          isHttps: cells[6]?.innerText.trim()
-        };
-      }).filter(proxy => proxy.port === '3128');
-    });
+    // Scrape proxies from the <textarea> containing proxy list
+    const proxiesText = await page.$eval('textarea.form-control', el => el.value);
+
+    // Split the text by new lines, then filter proxies by port 3128
+    const proxies = proxiesText.split('\n').map(proxy => {
+      const [ip, port] = proxy.split(':');
+      return { ip: ip.trim(), port: port ? port.trim() : '' };
+    }).filter(proxy => proxy.port && proxy.port === '3128');
 
     await browser.close();
 
@@ -65,7 +62,7 @@ app.post('/submit', async (req, res) => {
     const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
 
     const browser = await puppeteer.launch({
-      args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'],
+      args: [`--proxy-server=${proxyUrl}`, '--no-sandbox', '--disable-setuid-sandbox'], // Added --no-sandbox flag
       headless: true
     });
 
