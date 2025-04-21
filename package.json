@@ -21,7 +21,7 @@
   "homepage": "https://github.com/nirajtimila/tiktok#readme",
   "dependencies": {
     "axios": 	"^1.8.4",
-    "cheerio":"^10.1.0",
+    "cheerio":"1.0.0-rc.12",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "path": "^0.12.7",
