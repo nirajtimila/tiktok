@@ -49,7 +49,7 @@ function pushLog(sessionId, message) {
 
 async function getWorkingProxy(sessionId) {
   try {
-    const apiKey = process.env.1ce9498ff201971e17300943e647cf16; // ScraperAPI key from .env
+    const apiKey = process.env.SCRAPER_API_KEY; // ScraperAPI key from .env
     const apiUrl = `https://api.scraperapi.com/?api_key=${apiKey}&url=https://httpbin.org/ip`;
 
     const response = await fetch(apiUrl);
