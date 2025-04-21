@@ -2,7 +2,8 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 require('dotenv').config();
-const fetch = require('node-fetch'); // For fetching proxies
+const fetch = require('node-fetch'); // For ScraperAPI if needed
+const proxies = require('./proxies');  // Import your proxy list
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,20 +48,14 @@ function pushLog(sessionId, message) {
   if (session.res) session.res.write(`data: ${fullMessage}\n\n`);
 }
 
-// ⏬ New: Function to fetch and return a random proxy from online source
-async function getRandomProxyOnline() {
-  try {
-    const response = await fetch('https://www.proxy-list.download/api/v1/get?type=http&port=8080');
-    const text = await response.text();
-    const lines = text.trim().split('\r\n').filter(Boolean);
-    if (lines.length === 0) return null;
-
-    const [ip, port] = lines[Math.floor(Math.random() * lines.length)].split(':');
-    return { ip, port };
-  } catch (err) {
-    console.error("Failed to fetch proxies:", err.message);
-    return null;
+// Function to get a random proxy with port 8080
+function getRandomProxy() {
+  const port8080Proxies = proxies.filter(p => p.port === 8080);
+  if (port8080Proxies.length === 0) {
+    throw new Error("No proxies available on port 8080");
   }
+  const randomIndex = Math.floor(Math.random() * port8080Proxies.length);
+  return port8080Proxies[randomIndex];
 }
 
 app.post('/submit', async (req, res) => {
@@ -74,15 +69,13 @@ app.post('/submit', async (req, res) => {
   let browser;
   try {
     sessions.set(sessionId, { res: sessions.get(sessionId)?.res, logs: [] });
+
     pushLog(sessionId, `🚀 Starting automation for ${type === 'likes' ? 'Likes' : 'Views'}...`);
 
-    // Get a random proxy
-    const proxy = await getRandomProxyOnline();
-    if (!proxy) {
-      pushLog(sessionId, "❌ Failed to retrieve proxy.");
-      return res.status(500).json({ message: "❌ Could not get a working proxy." });
-    }
-    const proxyUrl = `http://${proxy.ip}:${proxy.port}`;
+    // Get a random proxy from the list (only port 8080)
+    const proxy = getRandomProxy();
+    const proxyUrl = `http://${proxy.username}:${proxy.password}@${proxy.ip}:${proxy.port}`;
+
     pushLog(sessionId, `✅ Using Proxy: ${proxy.ip}:${proxy.port}`);
 
     const executablePath = process.env.NODE_ENV === 'production' ? puppeteer.executablePath() : undefined;
@@ -97,11 +90,18 @@ app.post('/submit', async (req, res) => {
         '--disable-gpu',
         '--no-zygote',
         '--single-process',
-        `--proxy-server=${proxyUrl}`
+        `--proxy-server=${proxy.ip}:${proxy.port}`  // Use IP and port only for proxy-server
       ]
     });
 
     const page = await browser.newPage();
+
+    // Authenticate the proxy
+    await page.authenticate({
+      username: proxy.username,
+      password: proxy.password
+    });
+
     await page.setViewport({ width: 1280, height: 800 });
 
     pushLog(sessionId, `🌐 Preparing boost engine...`);
@@ -117,6 +117,7 @@ app.post('/submit', async (req, res) => {
     pushLog(sessionId, "⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
+    // Simulate progress
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(sessionId, `Progress: ${progress}%`);
       await new Promise(resolve => setTimeout(resolve, 300));
