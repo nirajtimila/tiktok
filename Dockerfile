@@ -29,17 +29,19 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy and install dependencies
+# Copy package.json and package-lock.json (or yarn.lock)
 COPY package*.json ./
+
+# Install dependencies
 RUN npm install
 
-# Copy source code
+# Copy all source code (including proxy.js and server.js)
 COPY . .
 
 # Expose port
 EXPOSE 3000
 
-# Set environment variable for Puppeteer to skip download (use bundled Chromium)
+# Set environment variables for Puppeteer to skip Chromium download
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV NODE_ENV=production
 
