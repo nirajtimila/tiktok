@@ -56,6 +56,11 @@ async function getWorkingProxy(sessionId) {
     const data = await response.json();
     const ip = data.origin; // Get the IP from the response
 
+    if (!ip) {
+      pushLog(sessionId, `❌ Proxy returned empty IP.`);
+      return null;
+    }
+
     pushLog(sessionId, `✅ Using ScraperAPI Proxy: ${ip}`);
     return ip;
   } catch (err) {
@@ -116,18 +121,20 @@ app.post('/submit', async (req, res) => {
     pushLog(sessionId, "⏳ Waiting for progress...");
     await page.waitForSelector('.progress-bar', { timeout: 60000 });
 
+    // Enhanced progress tracking
     for (let progress = 0; progress <= 100; progress += 2) {
       pushLog(sessionId, `Progress: ${progress}%`);
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 300)); // Add a delay to simulate real-time progress
     }
 
+    // Wait until progress reaches 100% or time out
     await page.waitForFunction(() => {
       const el = document.querySelector('.progress-bar');
       return el && (el.innerText.includes("100") || el.style.width === "100%");
     }, { timeout: 60000 });
 
     pushLog(sessionId, "✅ Progress complete. Finalizing...Sending views/likes...");
-    await new Promise(resolve => setTimeout(resolve, 30000));
+    await new Promise(resolve => setTimeout(resolve, 30000)); // Simulate finalization
 
     pushLog(sessionId, "🔍 Checking result...");
     const popupStatus = await page.evaluate(() => {
