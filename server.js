@@ -1,6 +1,7 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
+const proxies = require('./proxies'); // Importing the proxies list
 require('dotenv').config(); // For local .env files
 
 const app = express();
@@ -63,8 +64,11 @@ app.post('/submit', async (req, res) => {
     // Log the path being used for Puppeteer
     pushLog(sessionId, `Using Chromium path: ${executablePath || 'default bundled Chromium'}`);
 
-    // SOCKS5 Proxy URL - Replace with your actual proxy details
-    const SOCKS5_PROXY = 'socks5://<username>:<password>@<proxy-ip>:<proxy-port>';
+    // Randomly select a proxy from the proxies list
+    const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
+    const SOCKS5_PROXY = `socks5://${randomProxy.username}:${randomProxy.password}@${randomProxy.ip}:${randomProxy.port}`;
+
+    pushLog(sessionId, `Using proxy: ${SOCKS5_PROXY}`);
 
     browser = await puppeteer.launch({
       headless: true,
