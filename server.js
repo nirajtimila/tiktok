@@ -24,9 +24,9 @@ async function getProxyWithPort8080() {
 
     $('#proxylisttable tbody tr').each((index, element) => {
       const tds = $(element).find('td');
-      const ip = $(tds[0]).text();
-      const port = $(tds[1]).text();
-      const isHttps = $(tds[6]).text();
+      const ip = $(tds[0]).text().trim();
+      const port = $(tds[1]).text().trim();
+      const isHttps = $(tds[6]).text().trim();
 
       if (port === '8080') {
         proxies.push({ ip, port, isHttps });
@@ -35,6 +35,7 @@ async function getProxyWithPort8080() {
 
     if (proxies.length === 0) throw new Error('No proxies with port 8080 found.');
 
+    // Randomize
     const selectedProxy = proxies[Math.floor(Math.random() * proxies.length)];
     console.log('Using proxy:', `${selectedProxy.ip}:${selectedProxy.port}`);
     return selectedProxy;
